@@ -12,7 +12,8 @@ import type {
   SocketData,
   YouTubeTrack,
 } from "../shared/types";
-import { GameRoom } from "./game-room";
+import { GameRoom, type GameRoomSnapshot } from "./game-room";
+import { createGameSnapshotStore } from "./game-snapshot-store";
 import { createPlaylistStore } from "./playlist-store";
 import { createProfileStore } from "./profile-store";
 import { createSessionToken, verifySessionToken } from "./session";
@@ -51,7 +52,46 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string,
       : undefined,
   },
 );
-const room = new GameRoom();
+const gameSnapshots = createGameSnapshotStore();
+let restoredSnapshot: GameRoomSnapshot | null = null;
+try {
+  restoredSnapshot = await gameSnapshots.load();
+} catch (error) {
+  console.error("Game room snapshot restore failed", error);
+}
+const room = new GameRoom(restoredSnapshot);
+let pendingSnapshot = room.toSnapshot();
+let snapshotTimer: NodeJS.Timeout | null = null;
+let snapshotWrites: Promise<void> = Promise.resolve();
+let shuttingDown = false;
+
+function persistPendingSnapshot(): void {
+  const snapshot = pendingSnapshot;
+  pendingSnapshot = room.toSnapshot();
+  snapshotWrites = snapshotWrites
+    .then(() => gameSnapshots.save(snapshot))
+    .catch((error) => console.error("Game room snapshot save failed", error));
+}
+
+function scheduleSnapshot(): void {
+  pendingSnapshot = room.toSnapshot();
+  if (snapshotTimer) clearTimeout(snapshotTimer);
+  snapshotTimer = setTimeout(() => {
+    snapshotTimer = null;
+    persistPendingSnapshot();
+  }, 250);
+  snapshotTimer.unref?.();
+}
+
+async function flushSnapshot(): Promise<void> {
+  if (snapshotTimer) {
+    clearTimeout(snapshotTimer);
+    snapshotTimer = null;
+  }
+  pendingSnapshot = room.toSnapshot();
+  persistPendingSnapshot();
+  await snapshotWrites;
+}
 const profiles = createProfileStore();
 const playlists = createPlaylistStore();
 const youtubeSearch = new YouTubeSearchService({ apiKey: youtubeApiKey, mock: youtubeMockSearch });
@@ -200,6 +240,7 @@ function broadcastState(): void {
   io.sockets.sockets.forEach((socket) => {
     socket.emit("game:state", room.getState(socket.id));
   });
+  scheduleSnapshot();
 }
 
 io.on("connection", (socket) => {
@@ -404,8 +445,10 @@ io.on("connection", (socket) => {
   });
   socket.on("disconnect", () => {
     playlistAdmins.delete(socket.id);
-    room.disconnect(socket.id);
-    broadcastState();
+    if (!shuttingDown) {
+      room.disconnect(socket.id);
+      broadcastState();
+    }
   });
 });
 
@@ -422,3 +465,25 @@ app.use((request, response, next) => {
 httpServer.listen(port, "0.0.0.0", () => {
   console.log(`GeeksGame listening on http://0.0.0.0:${port}`);
 });
+
+async function beginGracefulShutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`GeeksGame received ${signal}; persisting the active game.`);
+  const forceExit = setTimeout(() => process.exit(1), 15000);
+  forceExit.unref?.();
+  try {
+    await flushSnapshot();
+    await new Promise<void>((resolveClose) => io.close(() => resolveClose()));
+    await new Promise<void>((resolveClose) => httpServer.close(() => resolveClose()));
+    await flushSnapshot();
+    clearTimeout(forceExit);
+    process.exit(0);
+  } catch (error) {
+    console.error("GeeksGame graceful shutdown failed", error);
+    process.exit(1);
+  }
+}
+
+process.once("SIGTERM", () => void beginGracefulShutdown("SIGTERM"));
+process.once("SIGINT", () => void beginGracefulShutdown("SIGINT"));

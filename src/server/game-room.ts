@@ -9,11 +9,31 @@ import type {
 } from "../shared/types";
 
 interface Participant {
-  socketId: string;
+  socketId: string | null;
   userId: string;
   displayName: string;
   avatarUrl: string | null;
   score: number;
+}
+
+interface SnapshotParticipant {
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  score: number;
+}
+
+export interface GameRoomSnapshot {
+  version: 1;
+  players: SnapshotParticipant[];
+  queue: SnapshotParticipant[];
+  buzzerUserId: string | null;
+  winnerUserId: string | null;
+  round: number;
+  scoreEvent: GameState["scoreEvent"];
+  track: YouTubeTrack | null;
+  musicPlayback: MusicPlayback;
+  answerAttempt: GameState["answerAttempt"];
 }
 
 const ok = (): ActionResult => ({ ok: true });
@@ -34,6 +54,29 @@ export class GameRoom {
   private musicPlayback: MusicPlayback = "idle";
   private answerAttempt: GameState["answerAttempt"] = null;
 
+  constructor(snapshot: GameRoomSnapshot | null = null) {
+    if (!snapshot || snapshot.version !== 1) return;
+    const restoreParticipant = (participant: SnapshotParticipant): Participant => ({
+      socketId: null,
+      userId: participant.userId,
+      displayName: participant.displayName,
+      avatarUrl: participant.avatarUrl,
+      score: Math.max(0, Number(participant.score) || 0),
+    });
+    this.players = snapshot.players.slice(0, MAX_PLAYERS).map(restoreParticipant);
+    this.queue = snapshot.queue.map(restoreParticipant);
+    this.buzzerUserId = snapshot.buzzerUserId;
+    this.winnerUserId = snapshot.winnerUserId;
+    this.round = Math.max(1, Number(snapshot.round) || 1);
+    this.scoreEvent = snapshot.scoreEvent;
+    this.track = snapshot.track;
+    this.musicPlayback = snapshot.musicPlayback === "playing" ? "paused" : snapshot.musicPlayback;
+    this.answerAttempt = snapshot.answerAttempt;
+    if (this.answerAttempt && this.answerAttempt.deadlineAt <= Date.now()) {
+      this.clearAnswerAttempt();
+    }
+  }
+
   claim(socketId: string, identity: SessionIdentity | null, role: ClaimableRole): ActionResult {
     if (role === "host") {
       if (this.hostSocketId === socketId) return ok();
@@ -48,10 +91,16 @@ export class GameRoom {
       this.players.find((participant) => participant.socketId === socketId) ??
       this.queue.find((participant) => participant.socketId === socketId);
     if (currentParticipant?.userId === identity.sub) return ok();
-    if (
-      this.players.some((participant) => participant.userId === identity.sub) ||
-      this.queue.some((participant) => participant.userId === identity.sub)
-    ) {
+    const existingParticipant =
+      this.players.find((participant) => participant.userId === identity.sub) ??
+      this.queue.find((participant) => participant.userId === identity.sub);
+    if (existingParticipant?.socketId === null) {
+      existingParticipant.socketId = socketId;
+      existingParticipant.displayName = identity.displayName;
+      existingParticipant.avatarUrl = identity.avatarUrl;
+      return ok();
+    }
+    if (existingParticipant) {
       return fail("Этот игрок уже участвует");
     }
     this.release(socketId);
@@ -160,8 +209,37 @@ export class GameRoom {
     if (!this.isHost(socketId)) return fail("Только ведущий освобождает место");
     const player = this.players.find((participant) => participant.userId === userId);
     if (!player) return fail("Игрок не найден");
-    this.release(player.socketId);
+    if (player.socketId) {
+      this.release(player.socketId);
+    } else {
+      this.players = this.players.filter((participant) => participant.userId !== userId);
+      if (userId === this.buzzerUserId) this.buzzerUserId = null;
+      if (userId === this.winnerUserId) this.winnerUserId = null;
+      if (userId === this.answerAttempt?.userId) this.clearAnswerAttempt();
+      this.promoteQueue();
+    }
     return ok();
+  }
+
+  toSnapshot(): GameRoomSnapshot {
+    const snapshotParticipant = (participant: Participant): SnapshotParticipant => ({
+      userId: participant.userId,
+      displayName: participant.displayName,
+      avatarUrl: participant.avatarUrl,
+      score: participant.score,
+    });
+    return {
+      version: 1,
+      players: this.players.map(snapshotParticipant),
+      queue: this.queue.map(snapshotParticipant),
+      buzzerUserId: this.buzzerUserId,
+      winnerUserId: this.winnerUserId,
+      round: this.round,
+      scoreEvent: this.scoreEvent,
+      track: this.track,
+      musicPlayback: this.musicPlayback,
+      answerAttempt: this.answerAttempt,
+    };
   }
 
   selectTrack(socketId: string, track: YouTubeTrack): ActionResult {

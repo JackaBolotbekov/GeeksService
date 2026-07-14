@@ -178,4 +178,16 @@ describe("GameRoom", () => {
     expect(room.claim("one-socket", player("one", "Choko"), "host").ok).toBe(false);
     expect(room.getState("one-socket").viewer.role).toBe("player");
   });
+
+  it("restores scores and lets the same identity reclaim its place after restart", () => {
+    const room = setup();
+    room.score("host", "one", 1);
+    const restored = new GameRoom(room.toSnapshot());
+
+    expect(restored.getState("new-host").players.find((item) => item.userId === "one")?.score).toBe(1);
+    expect(restored.claim("new-host", null, "host").ok).toBe(true);
+    expect(restored.claim("new-one", player("one", "Choko"), "player").ok).toBe(true);
+    expect(restored.getState("new-one").viewer.role).toBe("player");
+    expect(restored.getState("new-one").players.find((item) => item.userId === "one")?.score).toBe(1);
+  });
 });
