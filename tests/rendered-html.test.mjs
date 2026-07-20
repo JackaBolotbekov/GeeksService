@@ -15,6 +15,15 @@ test("ships Geeks Service page instead of the starter preview", async () => {
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 });
 
+test("leaderboard cards show score instead of generic TOP badges", async () => {
+  const app = await readFile(new URL("../app/GeeksServiceApp.tsx", import.meta.url), "utf8");
+  assert.match(app, /student\.totalScore/);
+  assert.doesNotMatch(app, /pointsBehindLeader === 0 \? "TOP"/);
+  assert.doesNotMatch(app, /<h1>/);
+  assert.doesNotMatch(app, /heroStats/);
+  assert.doesNotMatch(app, /12 занятий/);
+});
+
 test("includes leaderboard and admin API surfaces", async () => {
   const [leaderboardRoute, adminRoute, telegramRoute, importRoute] = await Promise.all([
     readFile(new URL("../app/api/leaderboard/route.ts", import.meta.url), "utf8"),

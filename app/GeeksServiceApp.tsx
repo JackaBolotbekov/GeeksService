@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { AdminStudentsResponse, AuthResponse, LeaderboardResponse, MeResponse, StudentView } from "@/lib/types";
 
 declare global {
@@ -83,11 +83,6 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const totalCompleted = useMemo(
-    () => leaderboard.reduce((sum, student) => sum + student.completedLessons, 0),
-    [leaderboard],
-  );
-
   return (
     <main className="shell">
       <header className="topbar">
@@ -97,19 +92,6 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
         </div>
         <div className="status"><span />ONLINE</div>
       </header>
-
-      <section className="hero">
-        <div>
-          <p className="eyebrow">12 занятий · домашки · рейтинг</p>
-          <h1>Leaderboard</h1>
-        </div>
-        <div className="heroStats">
-          <strong>{leaderboard.length}</strong>
-          <span>учеников</span>
-          <strong>{totalCompleted}</strong>
-          <span>домашек</span>
-        </div>
-      </section>
 
       {state === "loading" && <Panel text="Загружаю рейтинг..." />}
       {state === "error" && <Panel text={error ?? "Ошибка"} />}
@@ -243,7 +225,7 @@ function Leaderboard({ students }: { students: StudentView[] }) {
             <span>{student.completedLessons}/12 домашек · {student.totalScore} баллов</span>
           </div>
           <div className="delta">
-            {student.pointsBehindLeader === 0 ? "TOP" : `-${student.pointsBehindLeader}`}
+            {student.totalScore}
           </div>
         </article>
       ))}
