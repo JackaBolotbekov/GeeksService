@@ -33,13 +33,13 @@ async function api<T>(path: string, options: RequestInit = {}, sessionToken?: st
   return data as T;
 }
 
-export function GeeksServiceApp() {
-  const [state, setState] = useState<LoadState>("loading");
+export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentView[] }) {
+  const [state, setState] = useState<LoadState>("ready");
   const [error, setError] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isPending, setIsPending] = useState(false);
-  const [leaderboard, setLeaderboard] = useState<StudentView[]>([]);
+  const [leaderboard, setLeaderboard] = useState<StudentView[]>(initialStudents);
   const [adminData, setAdminData] = useState<AdminStudentsResponse | null>(null);
 
   const refresh = async (token = sessionToken, admin = isAdmin) => {
@@ -146,6 +146,7 @@ function AdminPanel({
   const [displayName, setDisplayName] = useState("");
   const [telegram, setTelegram] = useState("");
   const [busy, setBusy] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const createStudent = async () => {
     if (!displayName.trim()) return;
@@ -171,6 +172,18 @@ function AdminPanel({
     onChange(response);
   };
 
+  const syncRailway = async () => {
+    setSyncing(true);
+    try {
+      const response = await api<AdminStudentsResponse>("/api/admin/import-railway", {
+        method: "POST",
+      }, sessionToken);
+      onChange(response);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <section className="admin">
       <div className="sectionTitle">
@@ -181,6 +194,9 @@ function AdminPanel({
         <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Имя ученика" />
         <input value={telegram} onChange={(event) => setTelegram(event.target.value)} placeholder="@username или Telegram ID" />
         <button type="button" disabled={busy} onClick={createStudent}>Добавить</button>
+        <button type="button" className="syncButton" disabled={syncing} onClick={syncRailway}>
+          {syncing ? "Синх..." : "Синх Railway"}
+        </button>
       </div>
       <div className="scoreList">
         {(data?.students ?? []).map((student) => (

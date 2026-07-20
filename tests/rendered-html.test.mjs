@@ -16,13 +16,15 @@ test("ships Geeks Service page instead of the starter preview", async () => {
 });
 
 test("includes leaderboard and admin API surfaces", async () => {
-  const [leaderboardRoute, adminRoute, telegramRoute] = await Promise.all([
+  const [leaderboardRoute, adminRoute, telegramRoute, importRoute] = await Promise.all([
     readFile(new URL("../app/api/leaderboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/auth/telegram/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/import-railway/route.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(leaderboardRoute, /listStudents/);
   assert.match(adminRoute, /createStudent/);
   assert.match(telegramRoute, /validateTelegramInitData/);
+  assert.match(importRoute, /importStudentsSnapshot/);
 });

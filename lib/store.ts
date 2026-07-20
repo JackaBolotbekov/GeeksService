@@ -27,6 +27,15 @@ type CreateStudentInput = {
 
 type PatchStudentInput = Partial<CreateStudentInput>;
 
+type ImportedStudent = {
+  telegramUserId?: string | null;
+  telegramUsername?: string | null;
+  displayName: string;
+  avatarUrl?: string | null;
+  status?: StudentStatus;
+  scores?: ScoreCell[];
+};
+
 const seedStudents: CreateStudentInput[] = [
   { displayName: "Абдрахман Талайбеков", telegramUsername: "shoro_senpai" },
   { displayName: "Абдыкул Нурэл", telegramUsername: "mishka_freddy288" },
@@ -298,6 +307,71 @@ export async function createStudent(input: CreateStudentInput, currentTelegramUs
     VALUES (?, ?, ?, ?, ?, ?)
   `).bind(id, telegramUserId, telegramUsername, displayName, avatarUrl, status).run();
   return (await listAllStudents(currentTelegramUserId)).find((student) => student.id === id) as StudentView;
+}
+
+export async function importStudentsSnapshot(input: ImportedStudent[], currentTelegramUserId: string | null): Promise<AdminStudentsResponse> {
+  await ensureDatabase();
+  const db = d1();
+
+  for (const student of input) {
+    const displayName = assertName(student.displayName);
+    const telegramUserId = assertTelegramId(student.telegramUserId);
+    const telegramUsername = normalizeTelegramUsername(student.telegramUsername);
+    const avatarUrl = cleanImportedAvatar(student.avatarUrl, telegramUsername);
+    const status = student.status ?? "active";
+    const existing = await findImportMatch(db, displayName, telegramUserId, telegramUsername);
+    let studentId = existing?.id;
+
+    if (studentId) {
+      await db.prepare(`
+        UPDATE students
+        SET telegram_user_id = COALESCE(?, telegram_user_id),
+            telegram_username = COALESCE(?, telegram_username),
+            display_name = ?,
+            avatar_url = COALESCE(?, avatar_url),
+            status = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).bind(telegramUserId, telegramUsername, displayName, avatarUrl, status, studentId).run();
+    } else {
+      studentId = crypto.randomUUID();
+      await db.prepare(`
+        INSERT INTO students (id, telegram_user_id, telegram_username, display_name, avatar_url, status)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).bind(studentId, telegramUserId, telegramUsername, displayName, avatarUrl, status).run();
+    }
+
+    for (const cell of student.scores ?? []) {
+      if (cell.score === null) continue;
+      await setScore(studentId, cell.lessonNumber, cell.score, currentTelegramUserId);
+    }
+  }
+
+  return adminStudentsResponse(currentTelegramUserId);
+}
+
+async function findImportMatch(
+  db: D1Database,
+  displayName: string,
+  telegramUserId: string | null,
+  telegramUsername: string | null,
+): Promise<StudentRow | null> {
+  if (telegramUserId) {
+    const byId = await db.prepare("SELECT * FROM students WHERE telegram_user_id = ?").bind(telegramUserId).first<StudentRow>();
+    if (byId) return byId;
+  }
+  if (telegramUsername) {
+    const byUsername = await db.prepare("SELECT * FROM students WHERE telegram_username = ?").bind(telegramUsername).first<StudentRow>();
+    if (byUsername) return byUsername;
+  }
+  return await db.prepare("SELECT * FROM students WHERE lower(display_name) = lower(?) LIMIT 1").bind(displayName).first<StudentRow>();
+}
+
+function cleanImportedAvatar(avatarUrl: string | null | undefined, telegramUsername: string | null): string | null {
+  const publicAvatar = publicTelegramAvatar(telegramUsername);
+  if (publicAvatar) return publicAvatar;
+  if (!avatarUrl) return null;
+  return avatarUrl.startsWith("https://") ? avatarUrl : null;
 }
 
 export async function updateStudent(id: string, input: PatchStudentInput, currentTelegramUserId: string | null = null): Promise<StudentView> {
