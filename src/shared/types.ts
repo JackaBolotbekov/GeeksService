@@ -19,6 +19,7 @@ export interface ScoreCell {
 export interface StudentView {
   id: string;
   telegramUserId: string | null;
+  telegramUsername: string | null;
   displayName: string;
   avatarUrl: string | null;
   status: StudentStatus;

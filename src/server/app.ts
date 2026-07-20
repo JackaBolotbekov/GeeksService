@@ -12,7 +12,7 @@ import {
 } from "../shared/types";
 import { buildLeaderboard, toStudentView, type StoredStudent } from "./leaderboard";
 import { createSessionToken, verifySessionToken } from "./session";
-import { type StudentStore, createStudentStore } from "./student-store";
+import { type StudentStore, createStudentStore, normalizeTelegramUsername } from "./student-store";
 import { validateTelegramInitData, type TelegramUser } from "./telegram";
 
 export interface AppOptions {
@@ -27,16 +27,23 @@ export interface AppOptions {
 const nameSchema = z.string().trim().min(2).max(60);
 const statusSchema = z.union([z.literal("pending"), z.literal("active"), z.literal("archived")]);
 const telegramIdSchema = z.string().trim().regex(/^\d{1,20}$/);
+const telegramUsernameSchema = z.string().trim().regex(/^@?[a-zA-Z0-9_]{5,32}$/);
 const optionalTelegramIdSchema = z.union([telegramIdSchema, z.literal(""), z.null()]).optional();
+const optionalTelegramUsernameSchema = z.union([telegramUsernameSchema, z.literal(""), z.null()]).optional();
+const optionalTelegramContactSchema = z.union([telegramIdSchema, telegramUsernameSchema, z.literal(""), z.null()]).optional();
 const studentPatchSchema = z.object({
   displayName: nameSchema.optional(),
   telegramUserId: optionalTelegramIdSchema,
+  telegramUsername: optionalTelegramUsernameSchema,
+  telegram: optionalTelegramContactSchema,
   avatarUrl: z.union([z.string().url(), z.literal(""), z.null()]).optional(),
   status: statusSchema.optional(),
 });
 const studentCreateSchema = z.object({
   displayName: nameSchema,
   telegramUserId: optionalTelegramIdSchema,
+  telegramUsername: optionalTelegramUsernameSchema,
+  telegram: optionalTelegramContactSchema,
   status: statusSchema.optional(),
 });
 const scoreSchema = z.object({
@@ -60,6 +67,33 @@ function cleanNullableText(value: string | null | undefined): string | null | un
   if (value === null) return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function parseTelegramContact(input: {
+  telegram?: string | null;
+  telegramUserId?: string | null;
+  telegramUsername?: string | null;
+}): { telegramUserId?: string | null; telegramUsername?: string | null } {
+  const explicitId = cleanNullableText(input.telegramUserId);
+  const explicitUsernameText = cleanNullableText(input.telegramUsername);
+  const explicitUsername = explicitUsernameText === undefined ? undefined : normalizeTelegramUsername(explicitUsernameText);
+  const contact = cleanNullableText(input.telegram);
+  if (!contact) {
+    return {
+      telegramUserId: explicitId,
+      telegramUsername: explicitUsername,
+    };
+  }
+  if (/^\d{1,20}$/.test(contact)) {
+    return {
+      telegramUserId: contact,
+      telegramUsername: explicitUsername,
+    };
+  }
+  return {
+    telegramUserId: explicitId,
+    telegramUsername: normalizeTelegramUsername(contact),
+  };
 }
 
 function errorMessage(error: unknown): string {
@@ -186,6 +220,7 @@ export function createApp(options: AppOptions = {}): Express {
         ? null
         : await store.upsertTelegramStudent({
             telegramUserId,
+            telegramUsername: telegramUser.username ?? null,
             displayName: telegramDisplayName(telegramUser),
             avatarUrl: telegramUser.photo_url ?? null,
           });
@@ -223,6 +258,7 @@ export function createApp(options: AppOptions = {}): Express {
       ? null
       : await store.upsertTelegramStudent({
           telegramUserId,
+          telegramUsername: null,
           displayName: parsed.data.displayName,
           avatarUrl: null,
         });
@@ -273,9 +309,11 @@ export function createApp(options: AppOptions = {}): Express {
       return;
     }
     try {
+      const telegramContact = parseTelegramContact(parsed.data);
       await store.createStudent({
         displayName: parsed.data.displayName,
-        telegramUserId: cleanNullableText(parsed.data.telegramUserId),
+        telegramUserId: telegramContact.telegramUserId,
+        telegramUsername: telegramContact.telegramUsername,
         status: parsed.data.status ?? "active",
       });
       response.status(201).json(await adminStudentsResponse(identity.telegramUserId ?? null));
@@ -293,9 +331,11 @@ export function createApp(options: AppOptions = {}): Express {
       return;
     }
     try {
+      const telegramContact = parseTelegramContact(parsed.data);
       await store.updateStudent(request.params.studentId, {
         displayName: parsed.data.displayName,
-        telegramUserId: cleanNullableText(parsed.data.telegramUserId),
+        telegramUserId: telegramContact.telegramUserId,
+        telegramUsername: telegramContact.telegramUsername,
         avatarUrl: cleanNullableText(parsed.data.avatarUrl),
         status: parsed.data.status as StudentStatus | undefined,
       });

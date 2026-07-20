@@ -31,4 +31,21 @@ describe("MemoryStudentStore", () => {
 
     await expect(store.createStudent({ displayName: "Two", telegramUserId: "77" })).rejects.toThrow("telegramUserId");
   });
+
+  it("binds a pre-created username student on Telegram login", async () => {
+    const store = new MemoryStudentStore();
+    const created = await store.createStudent({ displayName: "Alya", telegramUsername: "@alya_geeks" });
+
+    const loggedIn = await store.upsertTelegramStudent({
+      telegramUserId: "9002",
+      telegramUsername: "Alya_Geeks",
+      displayName: "Alya Telegram",
+      avatarUrl: null,
+    });
+
+    expect(loggedIn.id).toBe(created.id);
+    expect(loggedIn.telegramUserId).toBe("9002");
+    expect(loggedIn.telegramUsername).toBe("alya_geeks");
+    expect(loggedIn.status).toBe("active");
+  });
 });

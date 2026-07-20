@@ -3,6 +3,7 @@ import { LESSON_COUNT, type ScoreCell, type StudentStatus, type StudentView } fr
 export interface StoredStudent {
   id: string;
   telegramUserId: string | null;
+  telegramUsername: string | null;
   displayName: string;
   avatarUrl: string | null;
   status: StudentStatus;

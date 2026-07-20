@@ -6,6 +6,7 @@ import type { ScoreCell, StudentStatus } from "../shared/types";
 
 export interface UpsertTelegramStudentInput {
   telegramUserId: string;
+  telegramUsername?: string | null;
   displayName: string;
   avatarUrl: string | null;
 }
@@ -13,6 +14,7 @@ export interface UpsertTelegramStudentInput {
 export interface StudentCreateInput {
   displayName: string;
   telegramUserId?: string | null;
+  telegramUsername?: string | null;
   avatarUrl?: string | null;
   status?: StudentStatus;
 }
@@ -20,6 +22,7 @@ export interface StudentCreateInput {
 export interface StudentPatchInput {
   displayName?: string;
   telegramUserId?: string | null;
+  telegramUsername?: string | null;
   avatarUrl?: string | null;
   status?: StudentStatus;
 }
@@ -34,6 +37,7 @@ export interface StudentStore {
 }
 
 const validStatuses = new Set<StudentStatus>(["pending", "active", "archived"]);
+const telegramUsernamePattern = /^[a-zA-Z0-9_]{5,32}$/;
 
 function normalizeStatus(status: string): StudentStatus {
   return validStatuses.has(status as StudentStatus) ? status as StudentStatus : "pending";
@@ -48,6 +52,16 @@ function validateStudentInput(input: StudentCreateInput | StudentPatchInput): vo
   if (input.telegramUserId !== undefined && input.telegramUserId !== null && !/^\d{1,20}$/.test(input.telegramUserId)) {
     throw new Error("telegramUserId must contain digits only");
   }
+  const telegramUsername = normalizeTelegramUsername(input.telegramUsername);
+  if (input.telegramUsername !== undefined && telegramUsername !== null && !telegramUsernamePattern.test(telegramUsername)) {
+    throw new Error("telegramUsername must be 5-32 characters");
+  }
+}
+
+export function normalizeTelegramUsername(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const normalized = value.trim().replace(/^@/, "").toLowerCase();
+  return normalized || null;
 }
 
 function emptyScores(): ScoreCell[] {
@@ -58,10 +72,24 @@ export class MemoryStudentStore implements StudentStore {
   private readonly students = new Map<string, StoredStudent>();
 
   async upsertTelegramStudent(input: UpsertTelegramStudentInput): Promise<StoredStudent> {
+    const telegramUsername = normalizeTelegramUsername(input.telegramUsername);
     const existing = [...this.students.values()].find((student) => student.telegramUserId === input.telegramUserId);
     if (existing) {
       const updated = {
         ...existing,
+        telegramUsername: telegramUsername ?? existing.telegramUsername,
+        avatarUrl: input.avatarUrl,
+      };
+      this.students.set(updated.id, updated);
+      return updated;
+    }
+    const byUsername = telegramUsername
+      ? [...this.students.values()].find((student) => student.telegramUsername === telegramUsername)
+      : null;
+    if (byUsername && !byUsername.telegramUserId) {
+      const updated = {
+        ...byUsername,
+        telegramUserId: input.telegramUserId,
         avatarUrl: input.avatarUrl,
       };
       this.students.set(updated.id, updated);
@@ -70,6 +98,7 @@ export class MemoryStudentStore implements StudentStore {
     return this.createStudent({
       displayName: input.displayName,
       telegramUserId: input.telegramUserId,
+      telegramUsername,
       avatarUrl: input.avatarUrl,
       status: "pending",
     });
@@ -88,9 +117,14 @@ export class MemoryStudentStore implements StudentStore {
     if (input.telegramUserId && [...this.students.values()].some((student) => student.telegramUserId === input.telegramUserId)) {
       throw new Error("telegramUserId already exists");
     }
+    const telegramUsername = normalizeTelegramUsername(input.telegramUsername);
+    if (telegramUsername && [...this.students.values()].some((student) => student.telegramUsername === telegramUsername)) {
+      throw new Error("telegramUsername already exists");
+    }
     const student: StoredStudent = {
       id: randomUUID(),
       telegramUserId: input.telegramUserId ?? null,
+      telegramUsername,
       displayName: input.displayName.trim(),
       avatarUrl: input.avatarUrl ?? null,
       status: input.status ?? "active",
@@ -110,10 +144,18 @@ export class MemoryStudentStore implements StudentStore {
     ) {
       throw new Error("telegramUserId already exists");
     }
+    const telegramUsername = normalizeTelegramUsername(input.telegramUsername);
+    if (
+      telegramUsername &&
+      [...this.students.values()].some((student) => student.id !== id && student.telegramUsername === telegramUsername)
+    ) {
+      throw new Error("telegramUsername already exists");
+    }
     const updated = {
       ...existing,
       displayName: input.displayName === undefined ? existing.displayName : input.displayName.trim(),
       telegramUserId: input.telegramUserId === undefined ? existing.telegramUserId : input.telegramUserId,
+      telegramUsername: input.telegramUsername === undefined ? existing.telegramUsername : telegramUsername,
       avatarUrl: input.avatarUrl === undefined ? existing.avatarUrl : input.avatarUrl,
       status: input.status ?? existing.status,
     };
@@ -138,6 +180,7 @@ export class MemoryStudentStore implements StudentStore {
 type PrismaStudent = {
   id: string;
   telegramUserId: bigint | null;
+  telegramUsername: string | null;
   displayName: string;
   avatarUrl: string | null;
   status: string;
@@ -148,6 +191,7 @@ function fromPrisma(student: PrismaStudent): StoredStudent {
   return {
     id: student.id,
     telegramUserId: student.telegramUserId?.toString() ?? null,
+    telegramUsername: student.telegramUsername,
     displayName: student.displayName,
     avatarUrl: student.avatarUrl,
     status: normalizeStatus(student.status),
@@ -159,17 +203,47 @@ export class PrismaStudentStore implements StudentStore {
   constructor(private readonly prisma: PrismaClient) {}
 
   async upsertTelegramStudent(input: UpsertTelegramStudentInput): Promise<StoredStudent> {
-    const student = await this.prisma.student.upsert({
+    const telegramUsername = normalizeTelegramUsername(input.telegramUsername);
+    const existingById = await this.prisma.student.findUnique({
       where: { telegramUserId: BigInt(input.telegramUserId) },
-      create: {
+      include: { scores: true },
+    });
+    if (existingById) {
+      const student = await this.prisma.student.update({
+        where: { id: existingById.id },
+        data: {
+          telegramUsername: telegramUsername ?? existingById.telegramUsername,
+          avatarUrl: input.avatarUrl,
+          lastSeenAt: new Date(),
+        },
+        include: { scores: true },
+      });
+      return fromPrisma(student);
+    }
+
+    const existingByUsername = telegramUsername
+      ? await this.prisma.student.findUnique({ where: { telegramUsername }, include: { scores: true } })
+      : null;
+    if (existingByUsername && !existingByUsername.telegramUserId) {
+      const student = await this.prisma.student.update({
+        where: { id: existingByUsername.id },
+        data: {
+          telegramUserId: BigInt(input.telegramUserId),
+          avatarUrl: input.avatarUrl,
+          lastSeenAt: new Date(),
+        },
+        include: { scores: true },
+      });
+      return fromPrisma(student);
+    }
+
+    const student = await this.prisma.student.create({
+      data: {
         telegramUserId: BigInt(input.telegramUserId),
+        telegramUsername,
         displayName: input.displayName,
         avatarUrl: input.avatarUrl,
         status: "pending",
-        lastSeenAt: new Date(),
-      },
-      update: {
-        avatarUrl: input.avatarUrl,
         lastSeenAt: new Date(),
       },
       include: { scores: true },
@@ -195,10 +269,12 @@ export class PrismaStudentStore implements StudentStore {
 
   async createStudent(input: StudentCreateInput): Promise<StoredStudent> {
     validateStudentInput(input);
+    const telegramUsername = normalizeTelegramUsername(input.telegramUsername);
     const student = await this.prisma.student.create({
       data: {
         displayName: input.displayName.trim(),
         telegramUserId: input.telegramUserId ? BigInt(input.telegramUserId) : null,
+        telegramUsername,
         avatarUrl: input.avatarUrl ?? null,
         status: input.status ?? "active",
       },
@@ -209,11 +285,13 @@ export class PrismaStudentStore implements StudentStore {
 
   async updateStudent(id: string, input: StudentPatchInput): Promise<StoredStudent> {
     validateStudentInput(input);
+    const telegramUsername = normalizeTelegramUsername(input.telegramUsername);
     const student = await this.prisma.student.update({
       where: { id },
       data: {
         ...(input.displayName === undefined ? {} : { displayName: input.displayName.trim() }),
         ...(input.telegramUserId === undefined ? {} : { telegramUserId: input.telegramUserId ? BigInt(input.telegramUserId) : null }),
+        ...(input.telegramUsername === undefined ? {} : { telegramUsername }),
         ...(input.avatarUrl === undefined ? {} : { avatarUrl: input.avatarUrl }),
         ...(input.status === undefined ? {} : { status: input.status }),
       },

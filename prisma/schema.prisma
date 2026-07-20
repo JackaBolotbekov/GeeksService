@@ -10,6 +10,7 @@ datasource db {
 model Student {
   id             String        @id @default(uuid())
   telegramUserId BigInt?       @unique @map("telegram_user_id")
+  telegramUsername String?     @unique @map("telegram_username")
   displayName    String        @map("display_name")
   avatarUrl      String?       @map("avatar_url")
   status         String        @default("pending")

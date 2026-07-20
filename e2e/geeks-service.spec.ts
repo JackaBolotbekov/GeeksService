@@ -8,25 +8,18 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(dimensions.contentWidth).toBeLessThanOrEqual(dimensions.viewportWidth + 1);
 }
 
-test("admin can add student, score lessons and update leaderboard", async ({ page }) => {
+test("admin can add student by username", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Geeks Service" })).toBeVisible();
   await page.getByRole("button", { name: "Войти как админ" }).click();
-  await expect(page.getByText("Оценки и ученики")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ученики" })).toBeVisible();
 
   await page.getByLabel("Имя ученика").fill("Алия");
-  await page.getByLabel("Telegram ID").fill("7001");
-  await page.getByRole("button", { name: "Добавить" }).click();
+  await page.getByLabel("Telegram username или ID").fill("@aliya_geeks");
+  await page.locator(".create-form").getByRole("button", { name: "Добавить" }).click();
+
+  await expect(page.locator(".student-row").filter({ hasText: "Алия" })).toBeVisible();
+  await expect(page.locator(".student-row").filter({ hasText: "@aliya_geeks" })).toBeVisible();
   await expect(page.locator(".student-card").filter({ hasText: "Алия" })).toBeVisible();
-
-  await page.locator(".score-row").filter({ hasText: "Алия" }).locator(".lesson-grid button").nth(0).click();
-  await page.locator(".score-picker").getByRole("button", { name: "10" }).click();
-  await expect(page.locator(".student-card").filter({ hasText: "Алия" }).getByText("10").first()).toBeVisible();
-
-  await page.locator(".score-row").filter({ hasText: "Алия" }).locator(".lesson-grid button").nth(1).click();
-  await page.locator(".score-picker").getByRole("button", { name: "9" }).click();
-  await expect(page.locator(".student-card").filter({ hasText: "Алия" }).getByText("19").first()).toBeVisible();
-  await expect(page.locator(".student-card").filter({ hasText: "Алия" }).getByText("2/12 домашек")).toBeVisible();
 });
 
 test("unknown student sees pending screen", async ({ page }) => {
@@ -34,7 +27,7 @@ test("unknown student sees pending screen", async ({ page }) => {
   await page.getByRole("button", { name: "Войти как ученик" }).click();
 
   await expect(page.getByText("Заявка отправлена")).toBeVisible();
-  await expect(page.getByText("Админ добавит вас в группу")).toBeVisible();
+  await expect(page.getByText("Админ подтвердит вас")).toBeVisible();
 });
 
 test("mobile layout has no horizontal overflow", async ({ browser }) => {
@@ -44,6 +37,7 @@ test("mobile layout has no horizontal overflow", async ({ browser }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Войти как админ" }).click();
   await page.getByLabel("Имя ученика").fill("Медер");
+  await page.getByLabel("Telegram username или ID").fill("@meder_geeks");
   await page.locator(".create-form").getByRole("button", { name: "Добавить" }).click();
 
   await expect(page.locator(".student-card").filter({ hasText: "Медер" })).toBeVisible();

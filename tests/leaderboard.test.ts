@@ -4,6 +4,7 @@ import { assertLessonNumber, assertScore, buildLeaderboard, type StoredStudent }
 function student(input: Partial<StoredStudent> & { id: string; displayName: string }): StoredStudent {
   return {
     telegramUserId: null,
+    telegramUsername: null,
     avatarUrl: null,
     status: "active",
     scores: [],

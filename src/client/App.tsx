@@ -14,11 +14,6 @@ interface ProfileState {
   isAdmin: boolean;
 }
 
-interface ScoreEditorState {
-  student: StudentView;
-  lessonNumber: number;
-}
-
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...options,
@@ -48,7 +43,6 @@ export function App() {
   const [adminData, setAdminData] = useState<AdminStudentsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
-  const [editor, setEditor] = useState<ScoreEditorState | null>(null);
 
   const authHeaders = useMemo(() => (
     sessionToken ? { Authorization: `Bearer ${sessionToken}` } : undefined
@@ -60,17 +54,18 @@ export function App() {
     });
     setLeaderboard(leaderboardResponse.students);
 
-    if (token) {
-      const meResponse = await api<MeResponse>("/api/me", {
+    if (!token) return;
+
+    const meResponse = await api<MeResponse>("/api/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    setMe(meResponse);
+
+    if (currentProfile?.isAdmin || meResponse.isAdmin) {
+      const adminResponse = await api<AdminStudentsResponse>("/api/admin/students", {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setMe(meResponse);
-      if (currentProfile?.isAdmin || meResponse.isAdmin) {
-        const adminResponse = await api<AdminStudentsResponse>("/api/admin/students", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setAdminData(adminResponse);
-      }
+      setAdminData(adminResponse);
     }
   }, []);
 
@@ -127,13 +122,13 @@ export function App() {
     }
   };
 
-  const createStudent = async (displayName: string, telegramUserId: string) => {
+  const createStudent = async (displayName: string, telegram: string) => {
     if (!authHeaders) return;
     try {
       const response = await api<AdminStudentsResponse>("/api/admin/students", {
         method: "POST",
         headers: authHeaders,
-        body: JSON.stringify({ displayName, telegramUserId: telegramUserId || null, status: "active" }),
+        body: JSON.stringify({ displayName, telegram: telegram || null, status: "active" }),
       });
       setAdminData(response);
       await refresh(sessionToken, profile);
@@ -161,27 +156,6 @@ export function App() {
     }
   };
 
-  const setScore = async (score: number | null) => {
-    if (!authHeaders || !editor) return;
-    try {
-      const response = await api<AdminStudentsResponse>(
-        `/api/admin/students/${editor.student.id}/scores/${editor.lessonNumber}`,
-        {
-          method: "PUT",
-          headers: authHeaders,
-          body: JSON.stringify({ score }),
-        },
-      );
-      setAdminData(response);
-      setEditor(null);
-      await refresh(sessionToken, profile);
-      haptic("success");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Не удалось сохранить оценку");
-      haptic("error");
-    }
-  };
-
   const currentStudent = me?.student ?? null;
   const isPending = Boolean(me?.pending);
   const isAdmin = Boolean(profile?.isAdmin || me?.isAdmin);
@@ -189,45 +163,35 @@ export function App() {
   return (
     <main className="app-shell">
       <Header profile={profile} />
+
       {loading ? (
         <LoadingScreen />
       ) : !sessionToken && !config.devAuth ? (
         <TelegramOnly configured={config.telegramConfigured} />
       ) : (
-        <div className="page-grid">
-          <section className="hero-panel">
-            <span className="eyebrow">12 занятий · домашки · рейтинг</span>
-            <h1>Geeks Service</h1>
-            <p>Таблица учеников: кто сколько домашних заданий закрыл и сколько баллов набрал.</p>
-            {config.devAuth && !sessionToken ? (
-              <div className="dev-actions">
-                <button onClick={() => void devLogin(false)}>Войти как ученик</button>
-                <button onClick={() => void devLogin(true)}>Войти как админ</button>
-              </div>
-            ) : null}
-          </section>
+        <div className="page-stack">
+          {config.devAuth && !sessionToken ? (
+            <section className="dev-card">
+              <button onClick={() => void devLogin(true)}>Войти как админ</button>
+              <button onClick={() => void devLogin(false)}>Войти как ученик</button>
+            </section>
+          ) : null}
 
-          {isPending ? <PendingCard student={currentStudent} /> : null}
-          <Leaderboard students={leaderboard} currentStudentId={currentStudent?.id ?? null} />
           {isAdmin && adminData ? (
             <AdminPanel
               data={adminData}
               onCreate={createStudent}
               onPatch={patchStudent}
-              onEditScore={(student, lessonNumber) => setEditor({ student, lessonNumber })}
             />
           ) : null}
+
+          {isPending ? <PendingCard student={currentStudent} /> : null}
+
+          <Leaderboard students={leaderboard} currentStudentId={currentStudent?.id ?? null} />
         </div>
       )}
 
       <AnimatePresence>
-        {editor ? (
-          <ScoreEditor
-            editor={editor}
-            onClose={() => setEditor(null)}
-            onSelect={(score) => void setScore(score)}
-          />
-        ) : null}
         {message ? <Toast message={message} onClose={() => setMessage(null)} /> : null}
       </AnimatePresence>
     </main>
@@ -243,7 +207,7 @@ function Header({ profile }: { profile: ProfileState | null }) {
       </div>
       <div className="profile-chip">
         <span className="online-dot" />
-        {profile?.displayName ?? "leaderboard"}
+        <span>{profile?.displayName ?? "online"}</span>
       </div>
     </header>
   );
@@ -253,8 +217,7 @@ function LoadingScreen() {
   return (
     <section className="center-card">
       <span className="loader-dot" />
-      <strong>Загружаем рейтинг</strong>
-      <p>Проверяем Telegram и собираем баллы.</p>
+      <strong>Загружаем</strong>
     </section>
   );
 }
@@ -263,18 +226,146 @@ function TelegramOnly({ configured }: { configured: boolean }) {
   return (
     <section className="center-card">
       <strong>Откройте через Telegram</strong>
-      <p>{configured ? "Ученики входят через Mini App, чтобы видеть свой прогресс." : "BOT_TOKEN ещё не настроен на сервере."}</p>
+      <p>{configured ? "Ученики входят через Mini App." : "BOT_TOKEN ещё не настроен на сервере."}</p>
     </section>
   );
 }
 
 function PendingCard({ student }: { student: StudentView | null }) {
   return (
-    <motion.section className="pending-card" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}>
+    <section className="pending-card">
       <span>Заявка отправлена</span>
       <strong>{student?.displayName ?? "Ученик"}</strong>
-      <p>Админ добавит вас в группу, после этого здесь появятся баллы и место в рейтинге.</p>
-    </motion.section>
+      <p>Админ подтвердит вас, и вы появитесь в рейтинге.</p>
+    </section>
+  );
+}
+
+function AdminPanel({
+  data,
+  onCreate,
+  onPatch,
+}: {
+  data: AdminStudentsResponse;
+  onCreate: (displayName: string, telegram: string) => Promise<void>;
+  onPatch: (student: StudentView, patch: { displayName?: string; status?: StudentStatus }) => Promise<void>;
+}) {
+  const activeStudents = data.students.filter((student) => student.status === "active");
+  const archivedStudents = data.students.filter((student) => student.status === "archived");
+
+  return (
+    <section className="admin-panel">
+      <div className="section-head">
+        <div>
+          <span className="eyebrow">admin</span>
+          <h1>Ученики</h1>
+        </div>
+        <span className="counter">{activeStudents.length}</span>
+      </div>
+
+      <CreateStudentForm onCreate={onCreate} />
+
+      {data.pendingStudents.length ? (
+        <div className="compact-block">
+          <h2>Заявки</h2>
+          {data.pendingStudents.map((student) => (
+            <StudentRow
+              key={student.id}
+              student={student}
+              actionLabel="Добавить"
+              onAction={() => void onPatch(student, { status: "active" })}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      <div className="compact-block">
+        <h2>Список</h2>
+        {activeStudents.length ? (
+          activeStudents.map((student) => (
+            <StudentRow
+              key={student.id}
+              student={student}
+              actionLabel="Архив"
+              mutedAction
+              onAction={() => void onPatch(student, { status: "archived" })}
+            />
+          ))
+        ) : (
+          <p className="muted">Пока пусто. Добавьте ученика по имени, @username или Telegram ID.</p>
+        )}
+      </div>
+
+      {archivedStudents.length ? (
+        <details className="archive-details">
+          <summary>Архив: {archivedStudents.length}</summary>
+          {archivedStudents.map((student) => (
+            <StudentRow
+              key={student.id}
+              student={student}
+              actionLabel="Вернуть"
+              onAction={() => void onPatch(student, { status: "active" })}
+            />
+          ))}
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
+function CreateStudentForm({ onCreate }: { onCreate: (displayName: string, telegram: string) => Promise<void> }) {
+  const [displayName, setDisplayName] = useState("");
+  const [telegram, setTelegram] = useState("");
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    await onCreate(displayName.trim(), telegram.trim());
+    setDisplayName("");
+    setTelegram("");
+  };
+
+  return (
+    <form className="create-form" onSubmit={(event) => void submit(event)}>
+      <input
+        value={displayName}
+        onChange={(event) => setDisplayName(event.target.value)}
+        placeholder="Имя ученика"
+        aria-label="Имя ученика"
+        autoComplete="off"
+      />
+      <input
+        value={telegram}
+        onChange={(event) => setTelegram(event.target.value)}
+        placeholder="@username или Telegram ID"
+        aria-label="Telegram username или ID"
+        autoComplete="off"
+      />
+      <button disabled={displayName.trim().length < 2}>Добавить</button>
+      <p>Контакты Telegram Mini App не читает. Надёжный способ: добавьте по @username или попросите ученика открыть Mini App - он появится в заявках.</p>
+    </form>
+  );
+}
+
+function StudentRow({
+  student,
+  actionLabel,
+  mutedAction,
+  onAction,
+}: {
+  student: StudentView;
+  actionLabel: string;
+  mutedAction?: boolean;
+  onAction: () => void;
+}) {
+  return (
+    <article className="student-row">
+      <Avatar student={student} />
+      <div>
+        <strong>{student.displayName}</strong>
+        <span>{student.telegramUsername ? `@${student.telegramUsername}` : student.telegramUserId ? `ID ${student.telegramUserId}` : "без привязки"}</span>
+      </div>
+      <button className={mutedAction ? "muted-button" : ""} onClick={onAction}>{actionLabel}</button>
+    </article>
   );
 }
 
@@ -283,9 +374,13 @@ function Leaderboard({ students, currentStudentId }: { students: StudentView[]; 
   return (
     <section className="leaderboard-panel">
       <div className="section-head">
-        <span className="eyebrow">leaderboard</span>
-        <h2>Рейтинг учеников</h2>
+        <div>
+          <span className="eyebrow">leaderboard</span>
+          <h1>Рейтинг</h1>
+        </div>
+        <span className="counter">{students.length}</span>
       </div>
+
       {students.length ? (
         <div className="student-list">
           {students.map((student) => (
@@ -298,10 +393,7 @@ function Leaderboard({ students, currentStudentId }: { students: StudentView[]; 
           ))}
         </div>
       ) : (
-        <div className="empty-state">
-          <strong>Пока нет активных учеников</strong>
-          <p>Админ добавит 10 учеников, и рейтинг появится здесь.</p>
-        </div>
+        <p className="muted empty">Пока нет активных учеников.</p>
       )}
     </section>
   );
@@ -316,19 +408,17 @@ function StudentCard({
   leaderScore: number;
   current: boolean;
 }) {
-  const progress = Math.round((student.completedLessons / LESSON_COUNT) * 100);
   return (
     <motion.article layout className={`student-card ${current ? "is-current" : ""}`}>
-      <div className="place">{student.place ?? "—"}</div>
+      <div className="place">{student.place ?? "-"}</div>
       <Avatar student={student} />
       <div className="student-main">
         <strong>{student.displayName}</strong>
-        <span>{student.completedLessons}/{LESSON_COUNT} домашек · {progress}%</span>
-        <div className="progress-line"><i style={{ width: `${progress}%` }} /></div>
+        <span>{student.completedLessons}/{LESSON_COUNT} домашек</span>
       </div>
       <div className="student-score">
         <strong>{student.totalScore}</strong>
-        <span>{leaderScore === student.totalScore ? "лидер" : `до 1 места ${student.pointsBehindLeader}`}</span>
+        <span>{leaderScore === student.totalScore ? "лидер" : `-${student.pointsBehindLeader}`}</span>
       </div>
     </motion.article>
   );
@@ -342,120 +432,6 @@ function Avatar({ student }: { student: StudentView }) {
     .map((part) => part[0]?.toUpperCase())
     .join("");
   return <span className="avatar avatar-fallback">{initials || "G"}</span>;
-}
-
-function AdminPanel({
-  data,
-  onCreate,
-  onPatch,
-  onEditScore,
-}: {
-  data: AdminStudentsResponse;
-  onCreate: (displayName: string, telegramUserId: string) => Promise<void>;
-  onPatch: (student: StudentView, patch: { displayName?: string; status?: StudentStatus }) => Promise<void>;
-  onEditScore: (student: StudentView, lessonNumber: number) => void;
-}) {
-  return (
-    <section className="admin-panel">
-      <div className="section-head">
-        <span className="eyebrow">admin</span>
-        <h2>Оценки и ученики</h2>
-      </div>
-      <CreateStudentForm onCreate={onCreate} />
-      {data.pendingStudents.length ? (
-        <div className="pending-list">
-          <h3>Ожидают добавления</h3>
-          {data.pendingStudents.map((student) => (
-            <div className="pending-row" key={student.id}>
-              <span>{student.displayName}</span>
-              <button onClick={() => void onPatch(student, { status: "active" })}>Добавить</button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      <div className="score-table">
-        {data.students.map((student) => (
-          <article className={`score-row ${student.status === "archived" ? "is-archived" : ""}`} key={student.id}>
-            <div className="score-row-head">
-              <strong>{student.displayName}</strong>
-              <span>{student.totalScore} баллов · {student.completedLessons}/{LESSON_COUNT}</span>
-              <button onClick={() => void onPatch(student, { status: student.status === "archived" ? "active" : "archived" })}>
-                {student.status === "archived" ? "Вернуть" : "Архив"}
-              </button>
-            </div>
-            <div className="lesson-grid">
-              {student.scores.map((cell) => (
-                <button
-                  className={cell.score === null ? "" : "has-score"}
-                  key={cell.lessonNumber}
-                  onClick={() => onEditScore(student, cell.lessonNumber)}
-                >
-                  <span>{cell.lessonNumber}</span>
-                  <strong>{cell.score ?? "—"}</strong>
-                </button>
-              ))}
-            </div>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function CreateStudentForm({ onCreate }: { onCreate: (displayName: string, telegramUserId: string) => Promise<void> }) {
-  const [displayName, setDisplayName] = useState("");
-  const [telegramUserId, setTelegramUserId] = useState("");
-
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    await onCreate(displayName, telegramUserId);
-    setDisplayName("");
-    setTelegramUserId("");
-  };
-
-  return (
-    <form className="create-form" onSubmit={(event) => void submit(event)}>
-      <input
-        value={displayName}
-        onChange={(event) => setDisplayName(event.target.value)}
-        placeholder="Имя ученика"
-        aria-label="Имя ученика"
-      />
-      <input
-        value={telegramUserId}
-        onChange={(event) => setTelegramUserId(event.target.value)}
-        placeholder="Telegram ID, если есть"
-        aria-label="Telegram ID"
-      />
-      <button disabled={displayName.trim().length < 2}>Добавить</button>
-    </form>
-  );
-}
-
-function ScoreEditor({
-  editor,
-  onClose,
-  onSelect,
-}: {
-  editor: ScoreEditorState;
-  onClose: () => void;
-  onSelect: (score: number | null) => void;
-}) {
-  return (
-    <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.section className="score-editor" initial={{ y: 28 }} animate={{ y: 0 }} exit={{ y: 28 }}>
-        <button className="close-button" onClick={onClose} aria-label="Закрыть">×</button>
-        <span className="eyebrow">занятие {editor.lessonNumber}</span>
-        <h2>{editor.student.displayName}</h2>
-        <div className="score-picker">
-          {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
-            <button key={score} onClick={() => onSelect(score)}>{score}</button>
-          ))}
-        </div>
-        <button className="clear-score" onClick={() => onSelect(null)}>Очистить оценку</button>
-      </motion.section>
-    </motion.div>
-  );
 }
 
 function Toast({ message, onClose }: { message: string; onClose: () => void }) {
