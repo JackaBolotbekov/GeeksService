@@ -96,6 +96,26 @@ describe("Geeks Service API", () => {
     });
   });
 
+  it("binds Telegram username to an existing manually added student", async () => {
+    const admin = await login(true);
+    const adminHeaders = { Authorization: `Bearer ${admin.sessionToken}` };
+    await request<AdminStudentsResponse>("/api/admin/students", {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ displayName: "Bayel" }),
+    });
+
+    const response = await request<AdminStudentsResponse>("/api/admin/students", {
+      method: "POST",
+      headers: adminHeaders,
+      body: JSON.stringify({ displayName: "Bayel", telegram: "@bayel_geeks" }),
+    });
+    const students = response.students.filter((student) => student.displayName === "Bayel");
+
+    expect(students).toHaveLength(1);
+    expect(students[0].telegramUsername).toBe("bayel_geeks");
+  });
+
   it("lets admin approve a pending student", async () => {
     await login(false, "8001");
     const admin = await login(true);

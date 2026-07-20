@@ -14,6 +14,7 @@ import { buildLeaderboard, toStudentView, type StoredStudent } from "./leaderboa
 import { createSessionToken, verifySessionToken } from "./session";
 import { type StudentStore, createStudentStore, normalizeTelegramUsername } from "./student-store";
 import { validateTelegramInitData, type TelegramUser } from "./telegram";
+import { defaultAvatarStorageDir, resolveTelegramAvatarUrl, resolveTelegramUserByUsername } from "./telegram-avatar";
 
 export interface AppOptions {
   store?: StudentStore;
@@ -22,6 +23,7 @@ export interface AppOptions {
   allowDevAuth?: boolean;
   adminTelegramIds?: string[];
   staticRoot?: string | null;
+  avatarStorageDir?: string | null;
 }
 
 const nameSchema = z.string().trim().min(2).max(60);
@@ -49,6 +51,7 @@ const studentCreateSchema = z.object({
 const scoreSchema = z.object({
   score: z.union([z.number().int().min(1).max(10), z.null()]),
 });
+const avatarSyncTtlMs = 6 * 60 * 60 * 1000;
 
 function parseAdminIds(value: string | undefined): string[] {
   return (value ?? "")
@@ -108,6 +111,7 @@ export function createApp(options: AppOptions = {}): Express {
   const adminIds = new Set(options.adminTelegramIds ?? parseAdminIds(process.env.ADMIN_TELEGRAM_IDS));
   const store = options.store ?? createStudentStore();
   const staticRoot = options.staticRoot === undefined ? resolve("dist/client") : options.staticRoot;
+  const avatarStorageDir = options.avatarStorageDir === null ? null : (options.avatarStorageDir ?? defaultAvatarStorageDir());
 
   if (isProduction && !process.env.SESSION_SECRET) {
     console.warn("SESSION_SECRET is not configured; set it before production use.");
@@ -121,6 +125,10 @@ export function createApp(options: AppOptions = {}): Express {
 
   const app = express();
   app.use(express.json({ limit: "32kb" }));
+  const avatarSyncAttempts = new Map<string, number>();
+  if (avatarStorageDir) {
+    app.use("/avatars", express.static(avatarStorageDir, { maxAge: "7d", immutable: true }));
+  }
 
   function isTelegramAdmin(telegramUserId: string | undefined): boolean {
     return Boolean(telegramUserId && adminIds.has(telegramUserId));
@@ -171,8 +179,61 @@ export function createApp(options: AppOptions = {}): Express {
     return leaderboard.find((item) => item.id === student.id) ?? toStudentView(student, currentTelegramUserId);
   }
 
+  async function avatarForTelegramUser(user: TelegramUser, telegramUserId: string): Promise<string | null> {
+    if (!botToken || !avatarStorageDir) return user.photo_url ?? null;
+    return await resolveTelegramAvatarUrl({
+      botToken,
+      telegramUserId,
+      initPhotoUrl: user.photo_url ?? null,
+      storageDir: avatarStorageDir,
+    }) ?? user.photo_url ?? null;
+  }
+
+  async function syncKnownStudentAvatars(students: StoredStudent[]): Promise<void> {
+    if (!botToken || !avatarStorageDir) return;
+
+    await Promise.all(students.map(async (student) => {
+      const syncKey = `${student.id}:${student.telegramUserId ?? student.telegramUsername ?? ""}`;
+      if (syncKey.endsWith(":")) return;
+      const lastAttemptAt = avatarSyncAttempts.get(syncKey) ?? 0;
+      if (Date.now() - lastAttemptAt < avatarSyncTtlMs) return;
+      avatarSyncAttempts.set(syncKey, Date.now());
+
+      try {
+        let telegramUserId = student.telegramUserId;
+        const patch: { telegramUserId?: string | null; avatarUrl?: string | null } = {};
+
+        if (!telegramUserId && student.telegramUsername) {
+          const resolved = await resolveTelegramUserByUsername({
+            botToken,
+            telegramUsername: student.telegramUsername,
+            storageDir: avatarStorageDir,
+          });
+          if (resolved?.telegramUserId) {
+            telegramUserId = resolved.telegramUserId;
+            patch.telegramUserId = resolved.telegramUserId;
+            if (resolved.avatarUrl) patch.avatarUrl = resolved.avatarUrl;
+          }
+        }
+
+        if (telegramUserId && !patch.avatarUrl) {
+          const avatarUrl = await resolveTelegramAvatarUrl({ botToken, telegramUserId, storageDir: avatarStorageDir });
+          if (avatarUrl) patch.avatarUrl = avatarUrl;
+        }
+
+        if (Object.keys(patch).length > 0) {
+          await store.updateStudent(student.id, patch);
+        }
+      } catch {
+        console.warn("Student avatar sync failed");
+      }
+    }));
+  }
+
   async function adminStudentsResponse(currentTelegramUserId: string | null): Promise<AdminStudentsResponse> {
-    const students = await store.listStudents();
+    let students = await store.listStudents();
+    await syncKnownStudentAvatars(students);
+    students = await store.listStudents();
     const leaderboard = buildLeaderboard(students, currentTelegramUserId);
     const byId = new Map(leaderboard.map((student) => [student.id, student]));
     return {
@@ -216,20 +277,21 @@ export function createApp(options: AppOptions = {}): Express {
       const telegramUser = validateTelegramInitData(parsed.data.initData, botToken);
       const telegramUserId = String(telegramUser.id);
       const isAdmin = isTelegramAdmin(telegramUserId);
+      const avatarUrl = await avatarForTelegramUser(telegramUser, telegramUserId);
       const student = isAdmin
         ? null
         : await store.upsertTelegramStudent({
             telegramUserId,
             telegramUsername: telegramUser.username ?? null,
             displayName: telegramDisplayName(telegramUser),
-            avatarUrl: telegramUser.photo_url ?? null,
+            avatarUrl,
           });
       response.json(authResponse({
         sub: `telegram:${telegramUserId}`,
         kind: "telegram",
         telegramUserId,
         displayName: student?.displayName ?? telegramDisplayName(telegramUser),
-        avatarUrl: student?.avatarUrl ?? telegramUser.photo_url ?? null,
+        avatarUrl: student?.avatarUrl ?? avatarUrl,
         isAdmin,
       }));
     } catch (error) {
@@ -310,12 +372,28 @@ export function createApp(options: AppOptions = {}): Express {
     }
     try {
       const telegramContact = parseTelegramContact(parsed.data);
-      await store.createStudent({
-        displayName: parsed.data.displayName,
-        telegramUserId: telegramContact.telegramUserId,
-        telegramUsername: telegramContact.telegramUsername,
-        status: parsed.data.status ?? "active",
-      });
+      const displayName = parsed.data.displayName.trim();
+      const students = await store.listStudents();
+      const existingByName = students.find((student) =>
+        student.displayName.trim().localeCompare(displayName, "ru", { sensitivity: "accent" }) === 0
+        && !student.telegramUserId
+        && !student.telegramUsername,
+      );
+
+      if (existingByName && (telegramContact.telegramUserId || telegramContact.telegramUsername)) {
+        await store.updateStudent(existingByName.id, {
+          telegramUserId: telegramContact.telegramUserId,
+          telegramUsername: telegramContact.telegramUsername,
+          status: parsed.data.status ?? existingByName.status,
+        });
+      } else {
+        await store.createStudent({
+          displayName,
+          telegramUserId: telegramContact.telegramUserId,
+          telegramUsername: telegramContact.telegramUsername,
+          status: parsed.data.status ?? "active",
+        });
+      }
       response.status(201).json(await adminStudentsResponse(identity.telegramUserId ?? null));
     } catch (error) {
       response.status(400).json({ message: errorMessage(error) });
