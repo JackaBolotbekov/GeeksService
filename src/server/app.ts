@@ -14,7 +14,12 @@ import { buildLeaderboard, toStudentView, type StoredStudent } from "./leaderboa
 import { createSessionToken, verifySessionToken } from "./session";
 import { type StudentStore, createStudentStore, normalizeTelegramUsername } from "./student-store";
 import { validateTelegramInitData, type TelegramUser } from "./telegram";
-import { defaultAvatarStorageDir, resolveTelegramAvatarUrl, resolveTelegramUserByUsername } from "./telegram-avatar";
+import {
+  defaultAvatarStorageDir,
+  resolveTelegramAvatarUrl,
+  resolveTelegramPublicAvatarByUsername,
+  resolveTelegramUserByUsername,
+} from "./telegram-avatar";
 
 export interface AppOptions {
   store?: StudentStore;
@@ -218,6 +223,14 @@ export function createApp(options: AppOptions = {}): Express {
 
         if (telegramUserId && !patch.avatarUrl) {
           const avatarUrl = await resolveTelegramAvatarUrl({ botToken, telegramUserId, storageDir: avatarStorageDir });
+          if (avatarUrl) patch.avatarUrl = avatarUrl;
+        }
+
+        if (!patch.avatarUrl && student.telegramUsername) {
+          const avatarUrl = await resolveTelegramPublicAvatarByUsername({
+            telegramUsername: student.telegramUsername,
+            storageDir: avatarStorageDir,
+          });
           if (avatarUrl) patch.avatarUrl = avatarUrl;
         }
 

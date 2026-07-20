@@ -64,11 +64,15 @@ function safeTelegramFileName(telegramUserId: string, sourceId: string, extensio
   return `tg-${telegramUserId}-${hash}${extension}`;
 }
 
+function fetchWithTimeout(url: string): Promise<Response> {
+  return fetch(url, { signal: AbortSignal.timeout(5_000) });
+}
+
 async function telegramApi<T>(botToken: string, method: string, params: Record<string, string>): Promise<T | null> {
   const url = new URL(`https://api.telegram.org/bot${botToken}/${method}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
 
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url.toString());
   if (!response.ok) return null;
   const data = await response.json() as TelegramApiResponse<T>;
   return data.ok && data.result ? data.result : null;
@@ -93,7 +97,7 @@ async function downloadTelegramFile(botToken: string, telegramUserId: string, st
 
   const extension = extname(file.file_path) || ".jpg";
   const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
-  const response = await fetch(downloadUrl);
+  const response = await fetchWithTimeout(downloadUrl);
   return persistAvatar(storageDir, telegramUserId, sourceId, response, extension);
 }
 
@@ -111,9 +115,28 @@ async function fetchViaBotApi(botToken: string, telegramUserId: string, storageD
 async function fetchSignedPhotoUrl(photoUrl: string, telegramUserId: string, storageDir: string): Promise<string | null> {
   const url = new URL(photoUrl);
   if (url.protocol !== "https:") return null;
-  const response = await fetch(url);
+  const response = await fetchWithTimeout(url.toString());
   const extension = extname(basename(url.pathname)) || extensionFromContentType(response.headers.get("content-type"));
   return persistAvatar(storageDir, telegramUserId, photoUrl, response, extension);
+}
+
+export async function resolveTelegramPublicAvatarByUsername(input: {
+  telegramUsername: string;
+  storageDir?: string;
+}): Promise<string | null> {
+  const username = input.telegramUsername.trim().replace(/^@/, "");
+  if (!username) return null;
+
+  try {
+    const url = `https://t.me/i/userpic/320/${encodeURIComponent(username)}.jpg`;
+    const response = await fetchWithTimeout(url);
+    const contentType = response.headers.get("content-type");
+    if (!contentType?.startsWith("image/")) return null;
+    return persistAvatar(input.storageDir ?? defaultAvatarStorageDir(), `u-${username}`, url, response, ".jpg");
+  } catch {
+    console.warn("Telegram public username avatar fetch failed");
+    return null;
+  }
 }
 
 export async function resolveTelegramAvatarUrl(input: {
