@@ -8,16 +8,18 @@ import type { AdminStudentsResponse, AuthResponse, LeaderboardResponse, MeRespon
 declare global {
   interface Window {
     Telegram?: {
-      WebApp?: {
-        initData?: string;
-        ready?: () => void;
-        expand?: () => void;
-      };
+      WebApp?: TelegramWebApp;
     };
   }
 }
 
 type LoadState = "loading" | "ready" | "error";
+
+type TelegramWebApp = {
+  initData?: string;
+  ready?: () => void;
+  expand?: () => void;
+};
 
 async function api<T>(path: string, options: RequestInit = {}, sessionToken?: string): Promise<T> {
   const response = await fetch(path, {
@@ -31,6 +33,16 @@ async function api<T>(path: string, options: RequestInit = {}, sessionToken?: st
   const data = await response.json().catch(() => null);
   if (!response.ok) throw new Error(data?.message ?? "Ошибка запроса");
   return data as T;
+}
+
+async function waitForTelegramWebApp(timeoutMs = 1200): Promise<TelegramWebApp | undefined> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const webApp = window.Telegram?.WebApp;
+    if (webApp) return webApp;
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+  }
+  return window.Telegram?.WebApp;
 }
 
 export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentView[] }) {
@@ -59,9 +71,10 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   useEffect(() => {
     const run = async () => {
       try {
-        window.Telegram?.WebApp?.ready?.();
-        window.Telegram?.WebApp?.expand?.();
-        const initData = window.Telegram?.WebApp?.initData;
+        const telegramWebApp = await waitForTelegramWebApp();
+        telegramWebApp?.ready?.();
+        telegramWebApp?.expand?.();
+        const initData = telegramWebApp?.initData;
         if (initData) {
           const auth = await api<AuthResponse>("/api/auth/telegram", {
             method: "POST",
@@ -217,7 +230,7 @@ function Leaderboard({
   return (
     <section className="leaderboard">
       {students.map((student) => {
-        const isExpanded = isAdmin && expandedStudentId === student.id;
+        const isExpanded = expandedStudentId === student.id;
         const activeForStudent = activeLesson?.studentId === student.id ? activeLesson.lessonNumber : null;
         return (
           <article className={`student ${student.isCurrentUser ? "current" : ""} ${isExpanded ? "expanded" : ""}`} key={student.id}>
@@ -226,14 +239,13 @@ function Leaderboard({
               <Avatar student={student} />
               <div className="studentInfo">
                 <strong>{student.displayName}</strong>
+                <span>{student.completedLessons}/12 домашек</span>
               </div>
               <button
                 type="button"
                 className="delta"
-                disabled={!isAdmin}
                 aria-expanded={isExpanded}
                 onClick={() => {
-                  if (!isAdmin) return;
                   setActiveLesson(null);
                   onToggleStudent(student.id);
                 }}
@@ -241,7 +253,7 @@ function Leaderboard({
                 {student.totalScore}
               </button>
             </div>
-            {isExpanded && (
+            {expandedStudentId === student.id && (
               <div className="lessonEditor">
                 <div className="lessonGrid">
                   {student.scores.map((cell) => {
@@ -251,7 +263,7 @@ function Leaderboard({
                         type="button"
                         className={`lessonChip ${cell.score === null ? "" : "filled"} ${activeForStudent === cell.lessonNumber ? "active" : ""}`}
                         key={cell.lessonNumber}
-                        disabled={savingKey === key}
+                        disabled={savingKey === key || !isAdmin}
                         onClick={() => setActiveLesson((current) =>
                           current?.studentId === student.id && current.lessonNumber === cell.lessonNumber
                             ? null
@@ -264,7 +276,7 @@ function Leaderboard({
                     );
                   })}
                 </div>
-                {activeForStudent && (
+                {isAdmin && activeForStudent && (
                   <div className="scorePicker">
                     {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
                       <button

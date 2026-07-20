@@ -11,6 +11,7 @@ test("ships Geeks Service page instead of the starter preview", async () => {
 
   assert.match(page, /GeeksServiceApp/);
   assert.match(layout, /Geeks Service/);
+  assert.match(layout, /telegram\.org\/js\/telegram-web-app\.js/);
   assert.doesNotMatch(layout, /Starter Project|codex-preview|_sites-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 });
@@ -24,6 +25,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /12 занятий/);
   assert.doesNotMatch(app, />ONLINE</);
   assert.doesNotMatch(app, /домашек ·/);
+  assert.match(app, /\/12 домашек/);
   assert.match(app, /lessonEditor/);
 });
 
