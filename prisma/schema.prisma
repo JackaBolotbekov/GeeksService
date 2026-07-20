@@ -3,32 +3,33 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
-model PlayerProfile {
-  id             String   @id @default(uuid())
-  telegramUserId BigInt   @unique @map("telegram_user_id")
-  displayName    String?  @db.VarChar(24) @map("display_name")
-  avatarUrl      String?  @map("avatar_url")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
-  lastSeenAt     DateTime @default(now()) @map("last_seen_at")
+model Student {
+  id             String        @id @default(uuid())
+  telegramUserId BigInt?       @unique @map("telegram_user_id")
+  displayName    String        @map("display_name")
+  avatarUrl      String?       @map("avatar_url")
+  status         String        @default("pending")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  lastSeenAt     DateTime?     @map("last_seen_at")
+  scores         LessonScore[]
 
-  @@map("player_profiles")
+  @@map("students")
 }
 
-model YouTubePlaylist {
-  id                String    @id @default(uuid())
-  youtubePlaylistId String    @unique @map("youtube_playlist_id")
-  title             String    @db.VarChar(160)
-  sourceUrl         String    @map("source_url")
-  thumbnailUrl      String?   @map("thumbnail_url")
-  itemCount         Int?      @map("item_count")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
-  lastSyncedAt      DateTime? @map("last_synced_at")
+model LessonScore {
+  id           String   @id @default(uuid())
+  studentId    String   @map("student_id")
+  lessonNumber Int      @map("lesson_number")
+  score        Int?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
-  @@map("youtube_playlists")
+  @@unique([studentId, lessonNumber])
+  @@map("lesson_scores")
 }

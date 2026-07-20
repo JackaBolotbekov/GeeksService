@@ -46,6 +46,7 @@ export function verifySessionToken(token: string, secret: string): SessionIdenti
       telegramUserId: payload.telegramUserId,
       displayName: payload.displayName,
       avatarUrl: payload.avatarUrl,
+      isAdmin: Boolean(payload.isAdmin),
     };
   } catch {
     return null;

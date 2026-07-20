@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 
 if (!process.env.DATABASE_URL) {
-  console.warn("DATABASE_URL is not configured; skipping profile database migration.");
+  console.warn("DATABASE_URL is not configured; skipping Geeks Service database migration.");
   process.exit(0);
 }
 

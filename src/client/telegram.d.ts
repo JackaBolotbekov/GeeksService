@@ -10,35 +10,7 @@ interface TelegramWebApp {
 }
 
 interface Window {
-  webkitAudioContext?: typeof AudioContext;
   Telegram?: {
     WebApp: TelegramWebApp;
   };
-  YT?: {
-    Player: new (
-      element: HTMLElement,
-      options: {
-        videoId?: string;
-        width?: string;
-        height?: string;
-        playerVars?: Record<string, string | number>;
-        events?: {
-          onReady?: () => void;
-          onStateChange?: (event: { data: number }) => void;
-        };
-      },
-    ) => {
-      playVideo(): void;
-      pauseVideo(): void;
-      cueVideoById(videoId: string): void;
-      loadVideoById(videoId: string): void;
-      destroy(): void;
-    };
-    PlayerState: {
-      ENDED: number;
-      PLAYING: number;
-      PAUSED: number;
-    };
-  };
-  onYouTubeIframeAPIReady?: () => void;
 }

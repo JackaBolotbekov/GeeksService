@@ -1,5 +1,5 @@
 {
-  "name": "geeks-game",
+  "name": "geeks-service",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "e2e:serve": "cross-env NODE_ENV=test ALLOW_DEV_AUTH=true YOUTUBE_MOCK_SEARCH=true HOST_ADMIN_PIN=1234 PORT=4173 node dist/server/index.js",
+    "e2e:serve": "cross-env NODE_ENV=test ALLOW_DEV_AUTH=true ADMIN_TELEGRAM_IDS=1291298838 PORT=4173 node dist/server/index.js",
     "db:generate": "prisma generate",
     "db:migrate": "node scripts/migrate.mjs"
   },
@@ -24,8 +24,6 @@
     "motion": "^12.23.24",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1",
     "zod": "^4.1.12"
   },
   "devDependencies": {
