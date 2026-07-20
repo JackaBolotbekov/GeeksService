@@ -40,12 +40,15 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   const [isAdmin, setIsAdmin] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [leaderboard, setLeaderboard] = useState<StudentView[]>(initialStudents);
-  const [adminData, setAdminData] = useState<AdminStudentsResponse | null>(null);
+  const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
+
+  const applyAdminResponse = (next: AdminStudentsResponse) => {
+    setLeaderboard(next.students.filter((student) => student.status === "active"));
+  };
 
   const refresh = async (token = sessionToken, admin = isAdmin) => {
     if (admin && token) {
       const response = await api<AdminStudentsResponse>("/api/admin/students", {}, token);
-      setAdminData(response);
       setLeaderboard(response.students.filter((student) => student.status === "active"));
       return;
     }
@@ -90,7 +93,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
           <span className="bolt">G</span>
           <span>GEEKS<span>Service</span></span>
         </div>
-        <div className="status"><span />ONLINE</div>
+        <div className="status" aria-label="Online"><span /></div>
       </header>
 
       {state === "loading" && <Panel text="Загружаю рейтинг..." />}
@@ -101,15 +104,24 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
         <>
           {isAdmin && sessionToken && (
             <AdminPanel
-              data={adminData}
               sessionToken={sessionToken}
-              onChange={async (next) => {
-                setAdminData(next);
-                setLeaderboard(next.students.filter((student) => student.status === "active"));
-              }}
+              onChange={applyAdminResponse}
             />
           )}
-          <Leaderboard students={leaderboard} />
+          <Leaderboard
+            students={leaderboard}
+            isAdmin={isAdmin && Boolean(sessionToken)}
+            expandedStudentId={expandedStudentId}
+            onToggleStudent={(studentId) => setExpandedStudentId((current) => current === studentId ? null : studentId)}
+            onScoreChange={async (student, lessonNumber, score) => {
+              if (!sessionToken) return;
+              const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}/scores/${lessonNumber}`, {
+                method: "PUT",
+                body: JSON.stringify({ score }),
+              }, sessionToken);
+              applyAdminResponse(response);
+            }}
+          />
         </>
       )}
     </main>
@@ -117,11 +129,9 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
 }
 
 function AdminPanel({
-  data,
   sessionToken,
   onChange,
 }: {
-  data: AdminStudentsResponse | null;
   sessionToken: string;
   onChange: (next: AdminStudentsResponse) => void;
 }) {
@@ -144,14 +154,6 @@ function AdminPanel({
     } finally {
       setBusy(false);
     }
-  };
-
-  const setScore = async (student: StudentView, lessonNumber: number, score: number | null) => {
-    const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}/scores/${lessonNumber}`, {
-      method: "PUT",
-      body: JSON.stringify({ score }),
-    }, sessionToken);
-    onChange(response);
   };
 
   const syncRailway = async () => {
@@ -180,55 +182,116 @@ function AdminPanel({
           {syncing ? "Синх..." : "Синх Railway"}
         </button>
       </div>
-      <div className="scoreList">
-        {(data?.students ?? []).map((student) => (
-          <article className="scoreCard" key={student.id}>
-            <div className="scoreHead">
-              <Avatar student={student} />
-              <div>
-                <strong>{student.displayName}</strong>
-                <span>{student.completedLessons}/12 · {student.totalScore} баллов</span>
-              </div>
-            </div>
-            <div className="scoreGrid">
-              {student.scores.map((cell) => (
-                <select
-                  key={cell.lessonNumber}
-                  aria-label={`Занятие ${cell.lessonNumber}`}
-                  value={cell.score ?? ""}
-                  onChange={(event) => setScore(student, cell.lessonNumber, event.target.value ? Number(event.target.value) : null)}
-                >
-                  <option value="">{cell.lessonNumber}</option>
-                  {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
-                    <option key={score} value={score}>{score}</option>
-                  ))}
-                </select>
-              ))}
-            </div>
-          </article>
-        ))}
-      </div>
     </section>
   );
 }
 
-function Leaderboard({ students }: { students: StudentView[] }) {
+function Leaderboard({
+  students,
+  isAdmin,
+  expandedStudentId,
+  onToggleStudent,
+  onScoreChange,
+}: {
+  students: StudentView[];
+  isAdmin: boolean;
+  expandedStudentId: string | null;
+  onToggleStudent: (studentId: string) => void;
+  onScoreChange: (student: StudentView, lessonNumber: number, score: number | null) => Promise<void>;
+}) {
+  const [activeLesson, setActiveLesson] = useState<{ studentId: string; lessonNumber: number } | null>(null);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+
+  const saveScore = async (student: StudentView, lessonNumber: number, score: number | null) => {
+    const key = `${student.id}:${lessonNumber}`;
+    setSavingKey(key);
+    try {
+      await onScoreChange(student, lessonNumber, score);
+      setActiveLesson(null);
+    } finally {
+      setSavingKey(null);
+    }
+  };
+
   if (students.length === 0) return <Panel text="Пока нет активных учеников" />;
   return (
     <section className="leaderboard">
-      {students.map((student) => (
-        <article className={`student ${student.isCurrentUser ? "current" : ""}`} key={student.id}>
-          <span className="place">{student.place}</span>
-          <Avatar student={student} />
-          <div className="studentInfo">
-            <strong>{student.displayName}</strong>
-            <span>{student.completedLessons}/12 домашек · {student.totalScore} баллов</span>
-          </div>
-          <div className="delta">
-            {student.totalScore}
-          </div>
-        </article>
-      ))}
+      {students.map((student) => {
+        const isExpanded = isAdmin && expandedStudentId === student.id;
+        const activeForStudent = activeLesson?.studentId === student.id ? activeLesson.lessonNumber : null;
+        return (
+          <article className={`student ${student.isCurrentUser ? "current" : ""} ${isExpanded ? "expanded" : ""}`} key={student.id}>
+            <div className="studentMain">
+              <span className="place">{student.place}</span>
+              <Avatar student={student} />
+              <div className="studentInfo">
+                <strong>{student.displayName}</strong>
+              </div>
+              <button
+                type="button"
+                className="delta"
+                disabled={!isAdmin}
+                aria-expanded={isExpanded}
+                onClick={() => {
+                  if (!isAdmin) return;
+                  setActiveLesson(null);
+                  onToggleStudent(student.id);
+                }}
+              >
+                {student.totalScore}
+              </button>
+            </div>
+            {isExpanded && (
+              <div className="lessonEditor">
+                <div className="lessonGrid">
+                  {student.scores.map((cell) => {
+                    const key = `${student.id}:${cell.lessonNumber}`;
+                    return (
+                      <button
+                        type="button"
+                        className={`lessonChip ${cell.score === null ? "" : "filled"} ${activeForStudent === cell.lessonNumber ? "active" : ""}`}
+                        key={cell.lessonNumber}
+                        disabled={savingKey === key}
+                        onClick={() => setActiveLesson((current) =>
+                          current?.studentId === student.id && current.lessonNumber === cell.lessonNumber
+                            ? null
+                            : { studentId: student.id, lessonNumber: cell.lessonNumber },
+                        )}
+                      >
+                        <span>{cell.lessonNumber}</span>
+                        <strong>{cell.score ?? "—"}</strong>
+                      </button>
+                    );
+                  })}
+                </div>
+                {activeForStudent && (
+                  <div className="scorePicker">
+                    {Array.from({ length: 10 }, (_, index) => index + 1).map((score) => (
+                      <button
+                        type="button"
+                        className="scoreOption"
+                        key={score}
+                        disabled={Boolean(savingKey)}
+                        onClick={() => saveScore(student, activeForStudent, score)}
+                      >
+                        {score}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="scoreClear"
+                      disabled={Boolean(savingKey)}
+                      onClick={() => saveScore(student, activeForStudent, null)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </article>
+        );
+      })}
     </section>
   );
 }
@@ -242,10 +305,19 @@ function Avatar({ student }: { student: StudentView }) {
     .map((part) => part[0]?.toUpperCase())
     .join("");
 
-  if (student.avatarUrl && !failed) {
+  if (shouldUseAvatar(student) && !failed) {
     return <img className="avatar" src={student.avatarUrl} alt="" onError={() => setFailed(true)} />;
   }
   return <span className="avatar fallback">{initials || "G"}</span>;
+}
+
+const knownMissingTelegramAvatars = new Set(["akyl1230", "chinaronaldo"]);
+
+function shouldUseAvatar(student: StudentView): student is StudentView & { avatarUrl: string } {
+  if (!student.avatarUrl) return false;
+  const username = student.telegramUsername?.toLowerCase();
+  if (username && knownMissingTelegramAvatars.has(username)) return false;
+  return true;
 }
 
 function Panel({ text }: { text: string }) {

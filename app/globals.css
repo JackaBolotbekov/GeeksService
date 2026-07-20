@@ -65,6 +65,7 @@ button {
 .brand,
 .status,
 .student,
+.studentMain,
 .scoreHead,
 .sectionTitle,
 .addRow {
@@ -111,16 +112,15 @@ button {
 }
 
 .status {
+  width: 18px;
   flex: 0 0 auto;
-  gap: 8px;
-  color: var(--muted);
-  letter-spacing: 0.08em;
-  font-size: 13px;
+  justify-content: flex-end;
+  font-size: 0;
 }
 
 .status span {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
   border-radius: 99px;
   background: var(--green);
   box-shadow: 0 0 18px var(--green);
@@ -269,7 +269,9 @@ button {
 .student {
   width: 100%;
   min-width: 0;
-  gap: 12px;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 0;
   min-height: clamp(78px, 18vw, 92px);
   padding: clamp(7px, 1.6vw, 9px);
   border-radius: 24px;
@@ -277,6 +279,12 @@ button {
   background: var(--card);
   color: var(--ink);
   box-shadow: clamp(4px, 1.4vw, 7px) clamp(4px, 1.4vw, 7px) 0 var(--yellow);
+}
+
+.studentMain {
+  width: 100%;
+  min-width: 0;
+  gap: 12px;
 }
 
 .student.current {
@@ -333,6 +341,7 @@ button {
 .delta {
   flex: 0 0 auto;
   min-width: clamp(46px, 11vw, 62px);
+  border: 0;
   text-align: center;
   border-radius: 18px;
   background: #141720;
@@ -340,6 +349,91 @@ button {
   padding: clamp(7px, 2vw, 10px);
   font-size: clamp(15px, 4vw, 20px);
   font-weight: 950;
+  cursor: pointer;
+}
+
+.delta:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.delta[aria-expanded="true"] {
+  background: var(--yellow);
+  color: var(--ink);
+}
+
+.lessonEditor {
+  width: 100%;
+  min-width: 0;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 2px solid rgba(17, 19, 27, 0.14);
+}
+
+.lessonGrid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.lessonChip,
+.scoreOption,
+.scoreClear {
+  border: 2px solid #12141b;
+  border-radius: 12px;
+  background: white;
+  color: var(--ink);
+  font-weight: 950;
+}
+
+.lessonChip {
+  min-width: 0;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 8px;
+}
+
+.lessonChip span {
+  color: #747985;
+  font-size: 11px;
+}
+
+.lessonChip strong {
+  font-size: 16px;
+}
+
+.lessonChip.filled {
+  background: #fff3a6;
+}
+
+.lessonChip.active {
+  background: var(--yellow);
+}
+
+.scorePicker {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 7px;
+  padding: 8px;
+  border-radius: 16px;
+  background: #151720;
+}
+
+.scoreOption,
+.scoreClear {
+  height: 34px;
+}
+
+.scoreOption {
+  background: var(--yellow);
+}
+
+.scoreClear {
+  background: #ffb3b3;
 }
 
 @media (max-width: 720px) {
@@ -372,6 +466,10 @@ button {
     border-radius: 20px;
   }
 
+  .studentMain {
+    gap: 8px;
+  }
+
   .delta {
     min-width: 42px;
     padding: 7px 8px;
@@ -397,5 +495,10 @@ button {
     min-width: 38px;
     padding: 6px 7px;
     font-size: 16px;
+  }
+
+  .lessonGrid,
+  .scorePicker {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
