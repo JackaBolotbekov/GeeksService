@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { type CSSProperties, type KeyboardEvent, type PointerEvent, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import type { AdminStudentsResponse, AuthResponse, LeaderboardResponse, MeResponse, StudentView } from "@/lib/types";
 
@@ -401,20 +401,6 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
                 throw caught;
               }
             }}
-            onStudentChange={async (student, patch) => {
-              if (!sessionToken) return;
-              const previous = leaderboardRef.current;
-              setLeaderboardSmooth((current) => rankVisibleStudents(current.map((item) =>
-                item.id === student.id ? mergeStudentPatch(item, patch) : item,
-              )));
-              try {
-                const response = await updateStudentOnServer(student, patch, sessionToken);
-                applyAdminResponse(response);
-              } catch (caught) {
-                setLeaderboardSmooth(previous);
-                throw caught;
-              }
-            }}
             onBulkStudentChange={async (changes) => {
               if (!sessionToken || changes.length === 0) return;
               const previous = leaderboardRef.current;
@@ -495,7 +481,6 @@ function Leaderboard({
   onBulkEditClose,
   onToggleStudent,
   onScoreChange,
-  onStudentChange,
   onBulkStudentChange,
 }: {
   students: StudentView[];
@@ -505,80 +490,14 @@ function Leaderboard({
   onBulkEditClose: () => void;
   onToggleStudent: (studentId: string) => void;
   onScoreChange: (student: StudentView, lessonNumber: number, score: number | null) => Promise<void>;
-  onStudentChange: (student: StudentView, patch: StudentPatch) => Promise<void>;
   onBulkStudentChange: (changes: StudentChange[]) => Promise<void>;
 }) {
   const [activeLesson, setActiveLesson] = useState<{ studentId: string; lessonNumber: number } | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
-  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
-  const [editField, setEditField] = useState<EditField | null>(null);
-  const [editDraft, setEditDraft] = useState<StudentDraft>({ displayName: "", telegram: "" });
   const [bulkDrafts, setBulkDrafts] = useState<Record<string, StudentDraft>>({});
   const [bulkSaving, setBulkSaving] = useState(false);
-  const [savingStudentEdit, setSavingStudentEdit] = useState(false);
-  const longPressTimer = useRef<number | null>(null);
-  const suppressNextClick = useRef(false);
-  const editInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    if (!editingStudentId || !editField) return;
-    const focusId = window.setTimeout(() => {
-      const input = editInputRef.current;
-      if (!input) return;
-      input.focus();
-      const end = input.value.length;
-      input.setSelectionRange(end, end);
-    }, 30);
-    return () => window.clearTimeout(focusId);
-  }, [editingStudentId, editField]);
-
-  const closeStudentEditor = () => {
-    setEditingStudentId(null);
-    setEditField(null);
-    setEditDraft({ displayName: "", telegram: "" });
-  };
-
-  const openStudentEditor = (student: StudentView) => {
-    if (expandedStudentId) onToggleStudent(expandedStudentId);
-    setEditingStudentId(student.id);
-    setEditField(null);
-    setEditDraft({
-      displayName: student.displayName,
-      telegram: telegramDraftValue(student),
-    });
-    setActiveLesson(null);
-  };
-
-  const clearLongPress = () => {
-    if (longPressTimer.current === null) return;
-    window.clearTimeout(longPressTimer.current);
-    longPressTimer.current = null;
-  };
-
-  const startLongPress = (event: PointerEvent<HTMLElement>, student: StudentView) => {
-    if (!isAdmin || bulkEditMode) return;
-    const target = event.target as HTMLElement;
-    if (target.closest("button,input,select")) return;
-    clearLongPress();
-    longPressTimer.current = window.setTimeout(() => {
-      suppressNextClick.current = true;
-      openStudentEditor(student);
-      hapticImpact("medium");
-      window.setTimeout(() => {
-        suppressNextClick.current = false;
-      }, 800);
-    }, 550);
-  };
 
   const toggleStudentFromRow = (student: StudentView) => {
-    if (suppressNextClick.current) {
-      suppressNextClick.current = false;
-      return;
-    }
-    if (editingStudentId === student.id) {
-      closeStudentEditor();
-      return;
-    }
     setActiveLesson(null);
     onToggleStudent(student.id);
   };
@@ -607,10 +526,6 @@ function Leaderboard({
     }
   };
 
-  const updateDraft = (field: EditField, value: string) => {
-    setEditDraft((current) => ({ ...current, [field]: value }));
-  };
-
   const updateBulkDraft = (student: StudentView, field: EditField, value: string) => {
     setBulkDrafts((current) => ({
       ...current,
@@ -621,30 +536,6 @@ function Leaderboard({
         [field]: value,
       },
     }));
-  };
-
-  const saveStudentEdit = async (student: StudentView) => {
-    let patch: StudentPatch | null = null;
-    try {
-      patch = buildStudentPatch(student, editDraft);
-    } catch {
-      hapticNotice("error");
-      return;
-    }
-    if (!patch) {
-      closeStudentEditor();
-      return;
-    }
-    setSavingStudentEdit(true);
-    try {
-      await onStudentChange(student, patch);
-      closeStudentEditor();
-      hapticNotice("success");
-    } catch {
-      hapticNotice("error");
-    } finally {
-      setSavingStudentEdit(false);
-    }
   };
 
   const bulkChanges = () => {
@@ -704,7 +595,6 @@ function Leaderboard({
       {students.map((student, index) => {
         const bulkDraft = bulkDrafts[student.id] ?? { displayName: student.displayName, telegram: telegramDraftValue(student) };
         const isExpanded = expandedStudentId === student.id;
-        const isEditing = editingStudentId === student.id;
         const activeForStudent = activeLesson?.studentId === student.id ? activeLesson.lessonNumber : null;
         const isSavingStudent = savingKey?.startsWith(`${student.id}:`) ?? false;
         if (bulkEditMode) {
@@ -742,7 +632,7 @@ function Leaderboard({
         }
         return (
           <article
-            className={`student ${student.isCurrentUser ? "current" : ""} ${isExpanded ? "expanded" : ""} ${isEditing ? "editing" : ""} ${isSavingStudent ? "saving" : ""}`}
+            className={`student ${student.isCurrentUser ? "current" : ""} ${isExpanded ? "expanded" : ""} ${isSavingStudent ? "saving" : ""}`}
             key={student.id}
             style={{
               "--rank": index,
@@ -754,19 +644,12 @@ function Leaderboard({
               role="button"
               tabIndex={0}
               aria-expanded={isExpanded}
-              onPointerDown={(event) => startLongPress(event, student)}
-              onPointerUp={clearLongPress}
-              onPointerLeave={clearLongPress}
-              onPointerCancel={clearLongPress}
               onClick={(event) => {
                 const target = event.target as HTMLElement;
                 if (target.closest("button,input,select")) return;
                 toggleStudentFromRow(student);
               }}
               onKeyDown={(event) => handleStudentKeyDown(event, student)}
-              onContextMenu={(event) => {
-                if (isAdmin) event.preventDefault();
-              }}
             >
               <span className="place">{student.place}</span>
               <Avatar student={student} />
@@ -786,65 +669,6 @@ function Leaderboard({
                 {student.totalScore}
               </button>
             </div>
-            {editingStudentId === student.id && (
-              <div
-                className="studentEditPanel"
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="editChoices" role="tablist" aria-label="Что изменить">
-                  {[
-                    ["displayName", "Имя"],
-                    ["telegram", "Telegram"],
-                  ].map(([field, label]) => (
-                    <button
-                      type="button"
-                      className={editField === field ? "active" : ""}
-                      key={field}
-                      disabled={savingStudentEdit}
-                      onClick={() => {
-                        setEditField(field as EditField);
-                        hapticSelection();
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {editField ? (
-                  <label className="editField">
-                    <span>
-                      {editField === "displayName" && "Имя ученика"}
-                      {editField === "telegram" && "Telegram"}
-                    </span>
-                    <input
-                      ref={editInputRef}
-                      className="studentEditInput"
-                      value={editDraft[editField]}
-                      disabled={savingStudentEdit}
-                      inputMode={editField === "telegram" && isTelegramId(editDraft.telegram) ? "numeric" : "text"}
-                      placeholder={editField === "displayName" ? "Имя ученика" : "@username или TG ID"}
-                      onChange={(event) => updateDraft(editField, event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          void saveStudentEdit(student);
-                        }
-                        if (event.key === "Escape") closeStudentEditor();
-                      }}
-                    />
-                  </label>
-                ) : (
-                  <p className="editHint">Выбери поле: имя или Telegram (@username / TG ID).</p>
-                )}
-                <div className="editActions">
-                  <button type="button" className="editCancel" disabled={savingStudentEdit} onClick={closeStudentEditor}>Отмена</button>
-                  <button type="button" className="editSave" disabled={savingStudentEdit} onClick={() => void saveStudentEdit(student)}>
-                    {savingStudentEdit ? "Сохраняю..." : "Сохранить"}
-                  </button>
-                </div>
-              </div>
-            )}
             <div className="lessonTabs" aria-label={`Баллы за 12 домашек: ${student.displayName}`}>
               {student.scores.map((cell) => (
                 <span
