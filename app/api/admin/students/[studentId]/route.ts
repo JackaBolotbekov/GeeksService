@@ -1,5 +1,5 @@
 import { cleanNullableText, jsonError, parseTelegramContact, requireAdmin } from "@/lib/api";
-import { adminStudentsResponse, updateStudent } from "@/lib/store";
+import { adminStudentsResponse, deleteStudent, updateStudent } from "@/lib/store";
 import type { StudentStatus } from "@/lib/types";
 
 export async function PATCH(request: Request, context: { params: Promise<{ studentId: string }> }) {
@@ -29,5 +29,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ stude
     return Response.json(await adminStudentsResponse(identity.telegramUserId));
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "Не удалось обновить ученика");
+  }
+}
+
+export async function DELETE(request: Request, context: { params: Promise<{ studentId: string }> }) {
+  const identity = await requireAdmin(request);
+  if (identity instanceof Response) return identity;
+  const { studentId } = await context.params;
+
+  try {
+    await deleteStudent(studentId);
+    return Response.json(await adminStudentsResponse(identity.telegramUserId));
+  } catch (error) {
+    return jsonError(error instanceof Error ? error.message : "Не удалось удалить ученика");
   }
 }

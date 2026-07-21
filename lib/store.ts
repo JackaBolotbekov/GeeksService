@@ -399,6 +399,15 @@ export async function updateStudent(id: string, input: PatchStudentInput, curren
   return (await listAllStudents(currentTelegramUserId)).find((student) => student.id === id) as StudentView;
 }
 
+export async function deleteStudent(id: string): Promise<void> {
+  await ensureDatabase();
+  const db = d1();
+  await db.batch([
+    db.prepare("DELETE FROM lesson_scores WHERE student_id = ?").bind(id),
+    db.prepare("DELETE FROM students WHERE id = ?").bind(id),
+  ]);
+}
+
 export async function setScore(studentId: string, lessonNumber: number, score: number | null, currentTelegramUserId: string | null): Promise<StudentView> {
   await ensureDatabase();
   const db = d1();
