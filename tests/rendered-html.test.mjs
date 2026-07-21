@@ -43,6 +43,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /lessonTabs/);
   assert.match(app, /lessonTab/);
   assert.match(app, /<small>\{cell\.lessonNumber\}<\/small>/);
+  assert.match(app, /<strong>\{cell\.score \?\? cell\.lessonNumber\}<\/strong>/);
+  assert.doesNotMatch(app, /<span>\{cell\.lessonNumber\}<\/span>/);
   assert.match(app, /addToggle/);
   assert.match(app, /editToggle/);
   assert.match(app, /bulkEditMode/);
@@ -107,8 +109,11 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /@keyframes badgeSwap/);
   assert.match(css, /\.lessonGrid\s*{[^}]*grid-template-columns:\s*repeat\(12,\s*minmax\(0,\s*1fr\)\)/s);
   assert.match(css, /\.lessonChip\s*{[^}]*height:\s*32px/s);
+  assert.match(css, /\.lessonChip\s*{[^}]*border-radius:\s*8px/s);
+  assert.match(css, /\.lessonChip:not\(\.filled\) strong\s*{[^}]*color:\s*#747985/s);
   assert.match(css, /\.lessonChip\.filled\s*{[^}]*background:\s*var\(--yellow\)/s);
   assert.match(css, /\.lessonChip\.filled\s*{[^}]*opacity:\s*1/s);
+  assert.match(css, /\.lessonChip\.active strong\s*{[^}]*color:\s*var\(--ink\)/s);
   assert.match(css, /\.lessonChip:disabled:not\(\.filled\)/);
   await access(new URL("../public/geeks-lightning.svg", import.meta.url));
   assert.doesNotMatch(app, /добавить ученика/);

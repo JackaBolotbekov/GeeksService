@@ -754,8 +754,7 @@ function Leaderboard({
                           });
                         }}
                       >
-                        <span>{cell.lessonNumber}</span>
-                        <strong>{cell.score ?? "—"}</strong>
+                        <strong>{cell.score ?? cell.lessonNumber}</strong>
                       </button>
                     );
                   })}
