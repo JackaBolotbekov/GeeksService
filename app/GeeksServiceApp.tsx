@@ -203,7 +203,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
     <main className="shell">
       <header className="topbar">
         <div className="brand">
-          <span className="bolt">G</span>
+          <img className="bolt" src="/geeks-lightning.png" alt="" />
           <span>GEEKS<span>Service</span></span>
         </div>
         <div className="topActions">
@@ -496,7 +496,7 @@ function Leaderboard({
                 ) : (
                   <strong>{student.displayName}</strong>
                 )}
-                <span>{student.completedLessons}/12 домашек</span>
+                <span>{student.completedLessons} из 12 ДЗ</span>
               </div>
               <button
                 type="button"

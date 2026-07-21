@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("ships Geeks Service page instead of the starter preview", async () => {
@@ -28,7 +28,9 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /12 занятий/);
   assert.doesNotMatch(app, />ONLINE</);
   assert.doesNotMatch(app, /домашек ·/);
-  assert.match(app, /\/12 домашек/);
+  assert.doesNotMatch(app, /\/12 домашек/);
+  assert.match(app, /из 12 ДЗ/);
+  assert.match(app, /geeks-lightning\.png/);
   assert.match(app, /lessonEditor/);
   assert.match(app, /addToggle/);
   assert.match(app, /inlineNameInput/);
@@ -37,6 +39,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /sectionTitle/);
   assert.match(css, /\.delta\s*{[^}]*background:\s*transparent/s);
   assert.match(css, /\.lessonChip\.filled\s*{[^}]*background:\s*var\(--yellow\)/s);
+  await access(new URL("../public/geeks-lightning.png", import.meta.url));
   assert.doesNotMatch(app, /добавить ученика/);
 });
 
