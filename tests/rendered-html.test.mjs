@@ -26,6 +26,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /<h1>/);
   assert.doesNotMatch(app, /heroStats/);
   assert.match(app, /VibeCoding-1/);
+  assert.match(app, /Урок - 6/);
+  assert.match(app, /RotatingGroupBadge/);
   assert.doesNotMatch(app, /12 занятий/);
   assert.doesNotMatch(app, />ONLINE</);
   assert.doesNotMatch(app, /className="status"/);
@@ -43,6 +45,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.delta\s*{[^}]*background:\s*linear-gradient/s);
   assert.match(css, /\.delta\s*{[^}]*-webkit-text-stroke:\s*0 transparent/s);
   assert.match(css, /\.leaderboard\s*{[^}]*user-select:\s*none/s);
+  assert.match(css, /\.groupBadgeText\s*{[^}]*animation:\s*badgeSwap/s);
+  assert.match(css, /@keyframes badgeSwap/);
   assert.match(css, /\.lessonChip\.filled\s*{[^}]*background:\s*var\(--yellow\)/s);
   assert.match(css, /\.lessonChip\.filled\s*{[^}]*opacity:\s*1/s);
   assert.match(css, /\.lessonChip:disabled:not\(\.filled\)/);

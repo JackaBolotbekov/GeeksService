@@ -124,6 +124,26 @@ function homeworkLabel(completedLessons: number) {
   return completedLessons === 12 ? "12 из 12 ✅" : `${completedLessons} из 12 ДЗ`;
 }
 
+const GROUP_BADGES = ["VibeCoding-1", "Урок - 6"] as const;
+
+function RotatingGroupBadge() {
+  const [badgeIndex, setBadgeIndex] = useState(0);
+  const label = GROUP_BADGES[badgeIndex];
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setBadgeIndex((current) => (current + 1) % GROUP_BADGES.length);
+    }, 2600);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  return (
+    <span className="groupBadge" aria-label="Группа и текущий урок">
+      <span key={label} className="groupBadgeText">{label}</span>
+    </span>
+  );
+}
+
 export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentView[] }) {
   const [state, setState] = useState<LoadState>("ready");
   const [error, setError] = useState<string | null>(null);
@@ -211,7 +231,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
           <span>GEEKS<span>Service</span></span>
         </div>
         <div className="topActions">
-          <span className="groupBadge">VibeCoding-1</span>
+          <RotatingGroupBadge />
           {isAdmin && sessionToken && (
             <button
               type="button"
