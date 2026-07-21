@@ -24,6 +24,10 @@ body {
   scrollbar-width: none;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   background:
@@ -51,6 +55,12 @@ select {
 
 button {
   cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+button:disabled {
+  cursor: default;
 }
 
 .shell {
@@ -143,11 +153,21 @@ button {
   line-height: 1;
   font-weight: 950;
   box-shadow: 4px 4px 0 #11131b;
+  transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
 }
 
 .addToggle[aria-expanded="true"] {
   transform: rotate(45deg);
   box-shadow: 2px 2px 0 #11131b;
+}
+
+.addToggle:not(:disabled):active {
+  transform: scale(0.94);
+  filter: brightness(1.04);
+}
+
+.addToggle[aria-expanded="true"]:active {
+  transform: rotate(45deg) scale(0.94);
 }
 
 .admin,
@@ -173,6 +193,7 @@ button {
   padding: 14px;
   margin-bottom: 10px;
   overflow: hidden;
+  animation: panelIn 180ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 
 .addRow {
@@ -190,6 +211,7 @@ button {
   color: white;
   padding: 0 14px;
   outline: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
 
 .addRow button {
@@ -201,6 +223,20 @@ button {
   color: var(--ink);
   padding: 0 18px;
   font-weight: 900;
+  transition: transform 140ms ease, filter 140ms ease, opacity 140ms ease;
+}
+
+.addRow input:focus {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 4px rgba(255, 223, 38, 0.12);
+}
+
+.addRow button:not(:disabled):active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.addRow button:disabled {
+  opacity: 0.55;
 }
 
 .scoreList {
@@ -267,6 +303,7 @@ button {
 }
 
 .student {
+  position: relative;
   width: 100%;
   min-width: 0;
   align-items: stretch;
@@ -279,16 +316,48 @@ button {
   background: var(--card);
   color: var(--ink);
   box-shadow: clamp(4px, 1.4vw, 7px) clamp(4px, 1.4vw, 7px) 0 var(--yellow);
+  transition:
+    transform 180ms cubic-bezier(0.2, 0.9, 0.2, 1),
+    box-shadow 180ms cubic-bezier(0.2, 0.9, 0.2, 1),
+    border-color 180ms ease,
+    background 180ms ease;
+  animation: cardIn 260ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+  animation-delay: calc(var(--rank, 0) * 14ms);
+  overflow: hidden;
 }
 
 .studentMain {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-width: 0;
   gap: 12px;
+  cursor: pointer;
+  border-radius: 18px;
+  outline: none;
 }
 
 .student.current {
   outline: 3px solid var(--green);
+}
+
+.student.expanded {
+  transform: translateY(-1px);
+  box-shadow: clamp(5px, 1.7vw, 8px) clamp(5px, 1.7vw, 8px) 0 var(--yellow);
+}
+
+.student.saving::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: inherit;
+  border: 2px solid rgba(255, 223, 38, 0.75);
+  pointer-events: none;
+  animation: savingPulse 800ms ease-in-out infinite;
+}
+
+.studentMain:focus-visible {
+  box-shadow: 0 0 0 4px rgba(255, 223, 38, 0.22);
 }
 
 .place {
@@ -306,6 +375,7 @@ button {
   border: 3px solid #12141b;
   object-fit: cover;
   flex: 0 0 auto;
+  transition: transform 180ms ease, filter 180ms ease;
 }
 
 .avatar.fallback {
@@ -350,6 +420,11 @@ button {
   font-size: clamp(15px, 4vw, 20px);
   font-weight: 950;
   cursor: pointer;
+  transition:
+    transform 140ms ease,
+    background 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .delta:disabled {
@@ -360,14 +435,23 @@ button {
 .delta[aria-expanded="true"] {
   background: var(--yellow);
   color: var(--ink);
+  box-shadow: inset 0 -3px 0 rgba(17, 19, 27, 0.14);
+}
+
+.delta:not(:disabled):active {
+  transform: translateY(1px) scale(0.96);
 }
 
 .lessonEditor {
+  position: relative;
+  z-index: 1;
   width: 100%;
   min-width: 0;
   margin-top: 8px;
   padding-top: 8px;
   border-top: 2px solid rgba(17, 19, 27, 0.14);
+  transform-origin: top;
+  animation: revealDown 190ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 
 .lessonGrid {
@@ -384,6 +468,11 @@ button {
   background: white;
   color: var(--ink);
   font-weight: 950;
+  transition:
+    transform 130ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease;
 }
 
 .lessonChip {
@@ -411,6 +500,19 @@ button {
 
 .lessonChip.active {
   background: var(--yellow);
+  box-shadow: inset 0 -3px 0 rgba(17, 19, 27, 0.16);
+}
+
+.lessonChip:not(:disabled):active,
+.scoreOption:not(:disabled):active,
+.scoreClear:not(:disabled):active {
+  transform: translateY(1px) scale(0.97);
+}
+
+.lessonChip:disabled,
+.scoreOption:disabled,
+.scoreClear:disabled {
+  opacity: 0.58;
 }
 
 .scorePicker {
@@ -421,6 +523,8 @@ button {
   padding: 6px;
   border-radius: 14px;
   background: #151720;
+  transform-origin: top;
+  animation: pickerIn 160ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 
 .nameEditor {
@@ -428,6 +532,7 @@ button {
   grid-template-columns: minmax(0, 1fr) 44px 38px;
   gap: 6px;
   margin-bottom: 8px;
+  animation: pickerIn 160ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 
 .nameEditor input {
@@ -440,6 +545,7 @@ button {
   padding: 0 10px;
   outline: none;
   font-weight: 900;
+  transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
 .nameEditor button {
@@ -449,6 +555,7 @@ button {
   background: var(--yellow);
   color: var(--ink);
   font-weight: 950;
+  transition: transform 140ms ease, filter 140ms ease, opacity 140ms ease;
 }
 
 .nameEditor button:last-child {
@@ -470,6 +577,74 @@ button {
 
 .scoreClear {
   background: #ffb3b3;
+}
+
+.nameEditor input:focus {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 4px rgba(255, 223, 38, 0.18);
+}
+
+.nameEditor button:not(:disabled):active {
+  transform: translateY(1px) scale(0.97);
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 160ms;
+}
+
+@keyframes panelIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cardIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes revealDown {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scaleY(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@keyframes pickerIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes savingPulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.8;
+  }
 }
 
 @media (max-width: 720px) {
@@ -536,5 +711,20 @@ button {
   .scorePicker {
     gap: 3px;
     padding: 5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
   }
 }

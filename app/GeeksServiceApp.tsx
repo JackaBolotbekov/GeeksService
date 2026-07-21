@@ -2,7 +2,8 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { PointerEvent, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, type PointerEvent, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import type { AdminStudentsResponse, AuthResponse, LeaderboardResponse, MeResponse, StudentView } from "@/lib/types";
 
 declare global {
@@ -19,6 +20,18 @@ type TelegramWebApp = {
   initData?: string;
   ready?: () => void;
   expand?: () => void;
+  HapticFeedback?: {
+    impactOccurred?: (style: "light" | "medium" | "heavy" | "rigid" | "soft") => void;
+    notificationOccurred?: (type: "error" | "success" | "warning") => void;
+    selectionChanged?: () => void;
+  };
+};
+
+type ViewTransitionHandle = {
+  finished: Promise<void>;
+  ready: Promise<void>;
+  updateCallbackDone: Promise<void>;
+  skipTransition: () => void;
 };
 
 async function api<T>(path: string, options: RequestInit = {}, sessionToken?: string): Promise<T> {
@@ -45,6 +58,68 @@ async function waitForTelegramWebApp(timeoutMs = 1200): Promise<TelegramWebApp |
   return window.Telegram?.WebApp;
 }
 
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function runWithViewTransition(update: () => void) {
+  if (typeof document === "undefined" || prefersReducedMotion()) {
+    update();
+    return;
+  }
+  const documentWithTransition = document as Document & {
+    startViewTransition?: (callback: () => void) => ViewTransitionHandle;
+  };
+  if (!documentWithTransition.startViewTransition) {
+    update();
+    return;
+  }
+  documentWithTransition.startViewTransition(() => {
+    flushSync(update);
+  });
+}
+
+function hapticSelection() {
+  window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
+}
+
+function hapticImpact(style: "light" | "medium" | "heavy" | "rigid" | "soft" = "light") {
+  window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.(style);
+}
+
+function hapticNotice(type: "error" | "success" | "warning") {
+  window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.(type);
+}
+
+function rankVisibleStudents(students: StudentView[]): StudentView[] {
+  const activeStudents = students
+    .filter((student) => student.status === "active")
+    .sort((left, right) =>
+      right.totalScore - left.totalScore
+      || right.completedLessons - left.completedLessons
+      || left.displayName.localeCompare(right.displayName, "ru"),
+    );
+  const leaderScore = activeStudents[0]?.totalScore ?? 0;
+  return activeStudents.map((student, index) => ({
+    ...student,
+    place: index + 1,
+    pointsBehindLeader: Math.max(0, leaderScore - student.totalScore),
+  }));
+}
+
+function withScore(students: StudentView[], studentId: string, lessonNumber: number, score: number | null): StudentView[] {
+  return rankVisibleStudents(students.map((student) => {
+    if (student.id !== studentId) return student;
+    const scores = student.scores.map((cell) => cell.lessonNumber === lessonNumber ? { ...cell, score } : cell);
+    return {
+      ...student,
+      scores,
+      completedLessons: scores.filter((cell) => cell.score !== null).length,
+      totalScore: scores.reduce((sum, cell) => sum + (cell.score ?? 0), 0),
+    };
+  }));
+}
+
 export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentView[] }) {
   const [state, setState] = useState<LoadState>("ready");
   const [error, setError] = useState<string | null>(null);
@@ -54,19 +129,43 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   const [leaderboard, setLeaderboard] = useState<StudentView[]>(initialStudents);
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const leaderboardRef = useRef(leaderboard);
+
+  useEffect(() => {
+    leaderboardRef.current = leaderboard;
+  }, [leaderboard]);
+
+  const setLeaderboardSmooth = (next: StudentView[] | ((current: StudentView[]) => StudentView[])) => {
+    runWithViewTransition(() => {
+      setLeaderboard((current) => typeof next === "function" ? next(current) : next);
+    });
+  };
 
   const applyAdminResponse = (next: AdminStudentsResponse) => {
-    setLeaderboard(next.students.filter((student) => student.status === "active"));
+    setLeaderboardSmooth(rankVisibleStudents(next.students));
   };
 
   const refresh = async (token = sessionToken, admin = isAdmin) => {
     if (admin && token) {
       const response = await api<AdminStudentsResponse>("/api/admin/students", {}, token);
-      setLeaderboard(response.students.filter((student) => student.status === "active"));
+      setLeaderboardSmooth(rankVisibleStudents(response.students));
       return;
     }
     const response = await api<LeaderboardResponse>("/api/leaderboard");
-    setLeaderboard(response.students);
+    setLeaderboardSmooth(rankVisibleStudents(response.students));
+  };
+
+  const toggleStudent = (studentId: string) => {
+    hapticSelection();
+    runWithViewTransition(() => {
+      setExpandedStudentId((current) => current === studentId ? null : studentId);
+    });
+  };
+
+  const expandStudent = (studentId: string) => {
+    runWithViewTransition(() => {
+      setExpandedStudentId(studentId);
+    });
   };
 
   useEffect(() => {
@@ -114,7 +213,10 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
               className="addToggle"
               aria-label={showAdminPanel ? "Скрыть добавление ученика" : "Добавить ученика"}
               aria-expanded={showAdminPanel}
-              onClick={() => setShowAdminPanel((current) => !current)}
+              onClick={() => {
+                hapticImpact("light");
+                runWithViewTransition(() => setShowAdminPanel((current) => !current));
+              }}
             >
               +
             </button>
@@ -139,22 +241,39 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
             students={leaderboard}
             isAdmin={isAdmin && Boolean(sessionToken)}
             expandedStudentId={expandedStudentId}
-            onToggleStudent={(studentId) => setExpandedStudentId((current) => current === studentId ? null : studentId)}
+            onToggleStudent={toggleStudent}
+            onExpandStudent={expandStudent}
             onScoreChange={async (student, lessonNumber, score) => {
               if (!sessionToken) return;
-              const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}/scores/${lessonNumber}`, {
-                method: "PUT",
-                body: JSON.stringify({ score }),
-              }, sessionToken);
-              applyAdminResponse(response);
+              const previous = leaderboardRef.current;
+              setLeaderboardSmooth((current) => withScore(current, student.id, lessonNumber, score));
+              try {
+                const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}/scores/${lessonNumber}`, {
+                  method: "PUT",
+                  body: JSON.stringify({ score }),
+                }, sessionToken);
+                applyAdminResponse(response);
+              } catch (caught) {
+                setLeaderboardSmooth(previous);
+                throw caught;
+              }
             }}
             onNameChange={async (student, displayName) => {
               if (!sessionToken) return;
-              const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}`, {
-                method: "PATCH",
-                body: JSON.stringify({ displayName }),
-              }, sessionToken);
-              applyAdminResponse(response);
+              const previous = leaderboardRef.current;
+              setLeaderboardSmooth((current) => rankVisibleStudents(current.map((item) =>
+                item.id === student.id ? { ...item, displayName } : item,
+              )));
+              try {
+                const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ displayName }),
+                }, sessionToken);
+                applyAdminResponse(response);
+              } catch (caught) {
+                setLeaderboardSmooth(previous);
+                throw caught;
+              }
             }}
           />
         </>
@@ -185,6 +304,9 @@ function AdminPanel({
       setDisplayName("");
       setTelegram("");
       onChange(response);
+      hapticNotice("success");
+    } catch {
+      hapticNotice("error");
     } finally {
       setBusy(false);
     }
@@ -192,11 +314,14 @@ function AdminPanel({
 
   return (
     <section className="admin">
-      <div className="addRow">
+      <form className="addRow" onSubmit={(event) => {
+        event.preventDefault();
+        void createStudent();
+      }}>
         <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Имя ученика" />
         <input value={telegram} onChange={(event) => setTelegram(event.target.value)} placeholder="@username или Telegram ID" />
-        <button type="button" disabled={busy} onClick={createStudent}>Добавить</button>
-      </div>
+        <button type="submit" disabled={busy || !displayName.trim()} aria-busy={busy}>Добавить</button>
+      </form>
     </section>
   );
 }
@@ -206,6 +331,7 @@ function Leaderboard({
   isAdmin,
   expandedStudentId,
   onToggleStudent,
+  onExpandStudent,
   onScoreChange,
   onNameChange,
 }: {
@@ -213,6 +339,7 @@ function Leaderboard({
   isAdmin: boolean;
   expandedStudentId: string | null;
   onToggleStudent: (studentId: string) => void;
+  onExpandStudent: (studentId: string) => void;
   onScoreChange: (student: StudentView, lessonNumber: number, score: number | null) => Promise<void>;
   onNameChange: (student: StudentView, displayName: string) => Promise<void>;
 }) {
@@ -222,6 +349,7 @@ function Leaderboard({
   const [editingName, setEditingName] = useState("");
   const [savingName, setSavingName] = useState(false);
   const longPressTimer = useRef<number | null>(null);
+  const suppressNextClick = useRef(false);
   const editInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -245,19 +373,46 @@ function Leaderboard({
     if (target.closest("button,input,select")) return;
     clearLongPress();
     longPressTimer.current = window.setTimeout(() => {
+      suppressNextClick.current = true;
       setEditingStudentId(student.id);
       setEditingName(student.displayName);
       setActiveLesson(null);
-      onToggleStudent(student.id);
+      hapticImpact("medium");
+      onExpandStudent(student.id);
+      window.setTimeout(() => {
+        suppressNextClick.current = false;
+      }, 800);
     }, 550);
+  };
+
+  const toggleStudentFromRow = (student: StudentView) => {
+    if (suppressNextClick.current) {
+      suppressNextClick.current = false;
+      return;
+    }
+    setActiveLesson(null);
+    onToggleStudent(student.id);
+  };
+
+  const handleStudentKeyDown = (event: KeyboardEvent<HTMLElement>, student: StudentView) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button,input,select")) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    toggleStudentFromRow(student);
   };
 
   const saveScore = async (student: StudentView, lessonNumber: number, score: number | null) => {
     const key = `${student.id}:${lessonNumber}`;
     setSavingKey(key);
+    setActiveLesson(null);
+    hapticImpact("light");
     try {
       await onScoreChange(student, lessonNumber, score);
-      setActiveLesson(null);
+      hapticNotice("success");
+    } catch {
+      hapticNotice("error");
+      setActiveLesson({ studentId: student.id, lessonNumber });
     } finally {
       setSavingKey(null);
     }
@@ -273,6 +428,9 @@ function Leaderboard({
     try {
       await onNameChange(student, nextName);
       setEditingStudentId(null);
+      hapticNotice("success");
+    } catch {
+      hapticNotice("error");
     } finally {
       setSavingName(false);
     }
@@ -281,17 +439,34 @@ function Leaderboard({
   if (students.length === 0) return <Panel text="Пока нет активных учеников" />;
   return (
     <section className="leaderboard">
-      {students.map((student) => {
+      {students.map((student, index) => {
         const isExpanded = expandedStudentId === student.id;
         const activeForStudent = activeLesson?.studentId === student.id ? activeLesson.lessonNumber : null;
+        const isSavingStudent = savingKey?.startsWith(`${student.id}:`) ?? false;
         return (
-          <article className={`student ${student.isCurrentUser ? "current" : ""} ${isExpanded ? "expanded" : ""}`} key={student.id}>
+          <article
+            className={`student ${student.isCurrentUser ? "current" : ""} ${isExpanded ? "expanded" : ""} ${isSavingStudent ? "saving" : ""}`}
+            key={student.id}
+            style={{
+              "--rank": index,
+              viewTransitionName: `student-${student.id.replace(/[^a-z0-9_-]/gi, "-")}`,
+            } as CSSProperties}
+          >
             <div
               className="studentMain"
+              role="button"
+              tabIndex={0}
+              aria-expanded={isExpanded}
               onPointerDown={(event) => startLongPress(event, student)}
               onPointerUp={clearLongPress}
               onPointerLeave={clearLongPress}
               onPointerCancel={clearLongPress}
+              onClick={(event) => {
+                const target = event.target as HTMLElement;
+                if (target.closest("button,input,select")) return;
+                toggleStudentFromRow(student);
+              }}
+              onKeyDown={(event) => handleStudentKeyDown(event, student)}
               onContextMenu={(event) => {
                 if (isAdmin) event.preventDefault();
               }}
@@ -328,7 +503,7 @@ function Leaderboard({
                       }}
                       placeholder="Имя ученика"
                     />
-                    <button type="button" disabled={savingName} onClick={() => saveName(student)}>
+                    <button type="button" disabled={savingName} onClick={() => void saveName(student)}>
                       OK
                     </button>
                     <button type="button" disabled={savingName} onClick={() => setEditingStudentId(null)}>
@@ -338,18 +513,22 @@ function Leaderboard({
                 )}
                 <div className="lessonGrid">
                   {student.scores.map((cell) => {
-                    const key = `${student.id}:${cell.lessonNumber}`;
                     return (
                       <button
                         type="button"
                         className={`lessonChip ${cell.score === null ? "" : "filled"} ${activeForStudent === cell.lessonNumber ? "active" : ""}`}
                         key={cell.lessonNumber}
-                        disabled={savingKey === key || !isAdmin}
-                        onClick={() => setActiveLesson((current) =>
-                          current?.studentId === student.id && current.lessonNumber === cell.lessonNumber
-                            ? null
-                            : { studentId: student.id, lessonNumber: cell.lessonNumber },
-                        )}
+                        disabled={Boolean(savingKey) || !isAdmin}
+                        onClick={() => {
+                          hapticSelection();
+                          runWithViewTransition(() => {
+                            setActiveLesson((current) =>
+                              current?.studentId === student.id && current.lessonNumber === cell.lessonNumber
+                                ? null
+                                : { studentId: student.id, lessonNumber: cell.lessonNumber },
+                            );
+                          });
+                        }}
                       >
                         <span>{cell.lessonNumber}</span>
                         <strong>{cell.score ?? "—"}</strong>
@@ -365,7 +544,7 @@ function Leaderboard({
                         className="scoreOption"
                         key={score}
                         disabled={Boolean(savingKey)}
-                        onClick={() => saveScore(student, activeForStudent, score)}
+                        onClick={() => void saveScore(student, activeForStudent, score)}
                       >
                         {score}
                       </button>
@@ -374,7 +553,7 @@ function Leaderboard({
                       type="button"
                       className="scoreClear"
                       disabled={Boolean(savingKey)}
-                      onClick={() => saveScore(student, activeForStudent, null)}
+                      onClick={() => void saveScore(student, activeForStudent, null)}
                     >
                       ×
                     </button>
