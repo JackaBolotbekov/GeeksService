@@ -211,6 +211,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
           <span>GEEKS<span>Service</span></span>
         </div>
         <div className="topActions">
+          <span className="groupBadge">VibeCoding-1</span>
           {isAdmin && sessionToken && (
             <button
               type="button"
