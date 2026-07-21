@@ -41,7 +41,14 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /lessonTabs/);
   assert.match(app, /lessonTab/);
   assert.match(app, /addToggle/);
-  assert.match(app, /inlineNameInput/);
+  assert.match(app, /studentEditPanel/);
+  assert.match(app, /editChoices/);
+  assert.match(app, /studentEditInput/);
+  assert.match(app, /telegramUsername/);
+  assert.match(app, /telegramUserId/);
+  assert.match(app, /setSelectionRange/);
+  assert.doesNotMatch(app, /inlineNameInput/);
+  assert.doesNotMatch(app, /\.select\(\)/);
   assert.doesNotMatch(app, /nameEditor/);
   assert.doesNotMatch(app, /Railway/);
   assert.doesNotMatch(app, /sectionTitle/);
@@ -55,7 +62,10 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.lessonTab\s*{[^}]*width:\s*clamp\(20px,\s*5\.3vw,\s*24px\)/s);
   assert.match(css, /\.lessonTab\s*{[^}]*height:\s*clamp\(20px,\s*5\.3vw,\s*24px\)/s);
   assert.match(css, /\.lessonTab\.filled\s*{[^}]*background:\s*var\(--yellow\)/s);
-  assert.match(css, /\.student\.expanded \.lessonTabs\s*{[^}]*opacity:\s*0/s);
+  assert.match(css, /\.student\.expanded \.lessonTabs,\s*\.student\.editing \.lessonTabs\s*{[^}]*opacity:\s*0/s);
+  assert.match(css, /\.studentEditPanel\s*{[^}]*background:\s*#151720/s);
+  assert.match(css, /\.editChoices\s*{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(css, /\.studentEditInput:focus\s*{[^}]*border-color:\s*var\(--yellow\)/s);
   assert.match(css, /\.groupBadgeText\s*{[^}]*animation:\s*badgeSwap 760ms/s);
   assert.match(css, /@keyframes badgeSwap/);
   assert.match(css, /\.lessonChip\.filled\s*{[^}]*background:\s*var\(--yellow\)/s);
