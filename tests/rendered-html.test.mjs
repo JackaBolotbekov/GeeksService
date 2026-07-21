@@ -53,9 +53,9 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /bulkTelegram/);
   assert.match(app, /useLockedViewportZoom/);
   assert.match(app, /gesturestart/);
-  assert.match(app, /preventWheelZoom/);
-  assert.match(app, /event\.ctrlKey \|\| event\.metaKey/);
   assert.match(app, /preventKeyboardZoom/);
+  assert.doesNotMatch(app, /preventWheelZoom/);
+  assert.doesNotMatch(app, /addEventListener\("wheel"/);
   assert.doesNotMatch(app, /touchmove/);
   assert.doesNotMatch(app, /touches\.length > 1/);
   assert.match(app, /telegramUsername/);
@@ -87,7 +87,11 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.leaderboard\s*{[^}]*gap:\s*10px/s);
   assert.match(css, /\.leaderboard\s*{[^}]*user-select:\s*none/s);
   assert.match(css, /input,\s*select,\s*textarea\s*{[^}]*font-size:\s*16px/s);
-  assert.match(css, /html,\s*body\s*{[^}]*touch-action:\s*pan-x pan-y/s);
+  assert.match(css, /html,\s*body\s*{[^}]*overflow-y:\s*hidden/s);
+  assert.match(css, /html,\s*body\s*{[^}]*touch-action:\s*auto/s);
+  assert.match(css, /\.shell\s*{[^}]*height:\s*100dvh/s);
+  assert.match(css, /\.shell\s*{[^}]*overflow-y:\s*auto/s);
+  assert.match(css, /\.shell\s*{[^}]*touch-action:\s*pan-y/s);
   assert.match(css, /\.lessonTabs\s*{[^}]*display:\s*flex/s);
   assert.match(css, /\.lessonTabs\s*{[^}]*justify-content:\s*center/s);
   assert.match(css, /\.lessonTabs\s*{[^}]*pointer-events:\s*none/s);
