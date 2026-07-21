@@ -12,6 +12,8 @@ test("ships Geeks Service page instead of the starter preview", async () => {
   assert.match(page, /GeeksServiceApp/);
   assert.match(layout, /Geeks Service/);
   assert.match(layout, /telegram\.org\/js\/telegram-web-app\.js/);
+  assert.match(layout, /maximumScale:\s*1/);
+  assert.match(layout, /userScalable:\s*false/);
   assert.doesNotMatch(layout, /Starter Project|codex-preview|_sites-preview/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 });
@@ -46,6 +48,9 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /bulkActions/);
   assert.match(app, /bulkStudentRow/);
   assert.match(app, /bulkTelegram/);
+  assert.match(app, /useLockedViewportZoom/);
+  assert.match(app, /gesturestart/);
+  assert.match(app, /touches\.length > 1/);
   assert.match(app, /telegramUsername/);
   assert.match(app, /telegramUserId/);
   assert.match(app, /telegramDraftValue/);
@@ -69,7 +74,10 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.delta\s*{[^}]*background:\s*linear-gradient/s);
   assert.match(css, /\.delta\s*{[^}]*-webkit-text-stroke:\s*0 transparent/s);
   assert.match(css, /\.student\s*{[^}]*overflow:\s*visible/s);
+  assert.match(css, /\.leaderboard\s*{[^}]*gap:\s*10px/s);
   assert.match(css, /\.leaderboard\s*{[^}]*user-select:\s*none/s);
+  assert.match(css, /input,\s*select,\s*textarea\s*{[^}]*font-size:\s*16px/s);
+  assert.match(css, /html,\s*body\s*{[^}]*touch-action:\s*pan-x pan-y/s);
   assert.match(css, /\.lessonTabs\s*{[^}]*display:\s*flex/s);
   assert.match(css, /\.lessonTabs\s*{[^}]*justify-content:\s*center/s);
   assert.match(css, /\.lessonTabs\s*{[^}]*pointer-events:\s*none/s);
@@ -83,6 +91,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(css, /\.studentEditInput/);
   assert.match(css, /\.bulkActions\s*{[^}]*position:\s*sticky/s);
   assert.match(css, /\.bulkFields\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.15fr\) minmax\(0,\s*0\.85fr\)/s);
+  assert.match(css, /\.bulkInput\s*{[^}]*font-size:\s*clamp\(16px,\s*3\.8vw,\s*18px\)/s);
   assert.match(css, /\.bulkInput:focus\s*{[^}]*border-color:\s*var\(--yellow\)/s);
   assert.match(css, /\.groupBadgeText\s*{[^}]*animation:\s*badgeSwap 760ms/s);
   assert.match(css, /@keyframes badgeSwap/);

@@ -110,6 +110,40 @@ function hapticNotice(type: "error" | "success" | "warning") {
   window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.(type);
 }
 
+function useLockedViewportZoom() {
+  useEffect(() => {
+    const options: AddEventListenerOptions = { passive: false };
+    const preventZoomGesture: EventListener = (event) => {
+      event.preventDefault();
+    };
+    const preventMultiTouchZoom = (event: TouchEvent) => {
+      if (event.touches.length > 1) event.preventDefault();
+    };
+    let lastTouchEnd = 0;
+    const preventDoubleTapZoom = (event: TouchEvent) => {
+      const now = Date.now();
+      if (now - lastTouchEnd < 350) event.preventDefault();
+      lastTouchEnd = now;
+    };
+
+    document.addEventListener("gesturestart", preventZoomGesture, options);
+    document.addEventListener("gesturechange", preventZoomGesture, options);
+    document.addEventListener("gestureend", preventZoomGesture, options);
+    document.addEventListener("touchmove", preventMultiTouchZoom, options);
+    document.addEventListener("touchend", preventDoubleTapZoom, options);
+    document.addEventListener("dblclick", preventZoomGesture, options);
+
+    return () => {
+      document.removeEventListener("gesturestart", preventZoomGesture);
+      document.removeEventListener("gesturechange", preventZoomGesture);
+      document.removeEventListener("gestureend", preventZoomGesture);
+      document.removeEventListener("touchmove", preventMultiTouchZoom);
+      document.removeEventListener("touchend", preventDoubleTapZoom);
+      document.removeEventListener("dblclick", preventZoomGesture);
+    };
+  }, []);
+}
+
 function rankVisibleStudents(students: StudentView[]): StudentView[] {
   const activeStudents = students
     .filter((student) => student.status === "active")
@@ -229,6 +263,8 @@ function RotatingGroupBadge() {
 }
 
 export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentView[] }) {
+  useLockedViewportZoom();
+
   const [state, setState] = useState<LoadState>("ready");
   const [error, setError] = useState<string | null>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
