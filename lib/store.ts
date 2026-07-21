@@ -148,12 +148,15 @@ function assertLessonNumber(lessonNumber: number): number {
 function rowToStudent(row: StudentRow, scores: ScoreCell[], currentTelegramUserId: string | null): StudentView {
   const completedLessons = scores.filter((cell) => cell.score !== null).length;
   const totalScore = scores.reduce((sum, cell) => sum + (cell.score ?? 0), 0);
+  const avatarUrl = row.avatar_url
+    ?? publicTelegramAvatar(row.telegram_username)
+    ?? (row.telegram_user_id ? `/api/avatar/${row.id}` : null);
   return {
     id: row.id,
     telegramUserId: row.telegram_user_id,
     telegramUsername: row.telegram_username,
     displayName: row.display_name,
-    avatarUrl: row.avatar_url,
+    avatarUrl,
     status: statusOf(row.status),
     scores,
     completedLessons,
@@ -238,6 +241,26 @@ export async function findByTelegramUserId(telegramUserId: string): Promise<Stud
   const row = await db.prepare("SELECT * FROM students WHERE telegram_user_id = ?").bind(telegramUserId).first<StudentRow>();
   if (!row) return null;
   return (await listAllStudents(telegramUserId)).find((student) => student.id === row.id) ?? null;
+}
+
+export async function findAvatarSourceByStudentId(studentId: string): Promise<{
+  telegramUserId: string | null;
+  telegramUsername: string | null;
+  avatarUrl: string | null;
+} | null> {
+  await ensureDatabase();
+  const db = d1();
+  const row = await db.prepare(`
+    SELECT telegram_user_id, telegram_username, avatar_url
+    FROM students
+    WHERE id = ?
+  `).bind(studentId).first<Pick<StudentRow, "telegram_user_id" | "telegram_username" | "avatar_url">>();
+  if (!row) return null;
+  return {
+    telegramUserId: row.telegram_user_id,
+    telegramUsername: row.telegram_username,
+    avatarUrl: row.avatar_url,
+  };
 }
 
 export async function upsertTelegramStudent(input: {

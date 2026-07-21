@@ -89,12 +89,13 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
 });
 
 test("includes leaderboard and admin API surfaces", async () => {
-  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, store] = await Promise.all([
+  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, store] = await Promise.all([
     readFile(new URL("../app/api/leaderboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/[studentId]/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/auth/telegram/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/import-railway/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/avatar/[studentId]/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/store.ts", import.meta.url), "utf8"),
   ]);
 
@@ -103,7 +104,11 @@ test("includes leaderboard and admin API surfaces", async () => {
   assert.match(studentRoute, /updateStudent/);
   assert.match(telegramRoute, /validateTelegramInitData/);
   assert.match(importRoute, /importStudentsSnapshot/);
+  assert.match(avatarRoute, /getUserProfilePhotos/);
+  assert.match(avatarRoute, /getFile/);
   assert.match(store, /SET telegram_username = \?, avatar_url = COALESCE/);
+  assert.match(store, /findAvatarSourceByStudentId/);
+  assert.match(store, /\/api\/avatar\/\$\{row\.id\}/);
 });
 
 test("admin score picker stays in one compact row", async () => {
