@@ -415,11 +415,11 @@ button {
 
 .scorePicker {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(11, minmax(0, 1fr));
+  gap: 4px;
   margin-top: 7px;
-  padding: 8px;
-  border-radius: 16px;
+  padding: 6px;
+  border-radius: 14px;
   background: #151720;
 }
 
@@ -457,7 +457,11 @@ button {
 
 .scoreOption,
 .scoreClear {
-  height: 34px;
+  min-width: 0;
+  height: 30px;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1;
 }
 
 .scoreOption {
@@ -530,6 +534,7 @@ button {
   }
 
   .scorePicker {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 3px;
+    padding: 5px;
   }
 }

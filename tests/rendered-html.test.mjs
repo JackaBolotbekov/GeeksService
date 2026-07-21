@@ -51,3 +51,10 @@ test("includes leaderboard and admin API surfaces", async () => {
   assert.match(importRoute, /importStudentsSnapshot/);
   assert.match(store, /SET telegram_username = \?, avatar_url = COALESCE/);
 });
+
+test("admin score picker stays in one compact row", async () => {
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(css, /grid-template-columns:\s*repeat\(11,\s*minmax\(0,\s*1fr\)\)/);
+  assert.doesNotMatch(css, /\.scorePicker\s*{[^}]*repeat\(4/s);
+});
