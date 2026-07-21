@@ -534,6 +534,17 @@ function Leaderboard({
                 {student.totalScore}
               </button>
             </div>
+            <div className="lessonTabs" aria-label={`Баллы за 12 домашек: ${student.displayName}`}>
+              {student.scores.map((cell) => (
+                <span
+                  className={`lessonTab ${cell.score === null ? "" : "filled"}`}
+                  key={cell.lessonNumber}
+                  title={`ДЗ ${cell.lessonNumber}: ${cell.score ?? "—"}`}
+                >
+                  {cell.score ?? "—"}
+                </span>
+              ))}
+            </div>
             {expandedStudentId === student.id && (
               <div className="lessonEditor">
                 <div className="lessonGrid">

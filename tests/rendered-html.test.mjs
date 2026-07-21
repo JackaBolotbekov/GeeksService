@@ -38,6 +38,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /12 из 12 ✅/);
   assert.match(app, /geeks-lightning\.svg/);
   assert.match(app, /lessonEditor/);
+  assert.match(app, /lessonTabs/);
+  assert.match(app, /lessonTab/);
   assert.match(app, /addToggle/);
   assert.match(app, /inlineNameInput/);
   assert.doesNotMatch(app, /nameEditor/);
@@ -45,7 +47,11 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /sectionTitle/);
   assert.match(css, /\.delta\s*{[^}]*background:\s*linear-gradient/s);
   assert.match(css, /\.delta\s*{[^}]*-webkit-text-stroke:\s*0 transparent/s);
+  assert.match(css, /\.student\s*{[^}]*overflow:\s*visible/s);
   assert.match(css, /\.leaderboard\s*{[^}]*user-select:\s*none/s);
+  assert.match(css, /\.lessonTabs\s*{[^}]*grid-template-columns:\s*repeat\(12,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(css, /\.lessonTabs\s*{[^}]*pointer-events:\s*none/s);
+  assert.match(css, /\.lessonTab\.filled\s*{[^}]*background:\s*var\(--yellow\)/s);
   assert.match(css, /\.groupBadgeText\s*{[^}]*animation:\s*badgeSwap 760ms/s);
   assert.match(css, /@keyframes badgeSwap/);
   assert.match(css, /\.lessonChip\.filled\s*{[^}]*background:\s*var\(--yellow\)/s);
