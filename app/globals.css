@@ -538,10 +538,11 @@ button:disabled {
 }
 
 .lessonTab {
+  position: relative;
   min-width: 0;
-  width: clamp(20px, 5.3vw, 24px);
+  width: clamp(20px, 5.35vw, 25px);
   height: clamp(20px, 5.3vw, 24px);
-  flex: 0 0 clamp(20px, 5.3vw, 24px);
+  flex: 0 0 clamp(20px, 5.35vw, 25px);
   display: grid;
   place-items: center;
   border: 2px solid #12141b;
@@ -557,6 +558,24 @@ button:disabled {
     0 5px 10px rgba(0, 0, 0, 0.12);
 }
 
+.lessonTab small {
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  color: #8f949d;
+  font-size: clamp(6px, 1.65vw, 8px);
+  font-weight: 950;
+  line-height: 1;
+}
+
+.lessonTab strong {
+  color: inherit;
+  font-size: clamp(10px, 2.8vw, 12px);
+  font-weight: 950;
+  line-height: 1;
+  transform: translateY(1px);
+}
+
 .lessonTab.filled {
   background: var(--yellow);
   color: var(--ink);
@@ -564,6 +583,14 @@ button:disabled {
     inset 0 -2px 0 rgba(17, 19, 27, 0.14),
     0 3px 0 rgba(17, 19, 27, 0.92),
     0 5px 10px rgba(0, 0, 0, 0.12);
+}
+
+.lessonTab.filled small {
+  color: rgba(17, 19, 27, 0.58);
+}
+
+.lessonTab.filled strong {
+  color: var(--ink);
 }
 
 .student.expanded .lessonTabs,
@@ -689,8 +716,8 @@ button:disabled {
 
 .lessonGrid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 5px;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 3px;
 }
 
 .lessonChip,
@@ -709,22 +736,27 @@ button:disabled {
 }
 
 .lessonChip {
+  position: relative;
   min-width: 0;
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 2px;
-  padding: 0 6px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
 }
 
 .lessonChip span {
+  position: absolute;
+  top: 3px;
+  left: 4px;
   color: #747985;
-  font-size: 10px;
+  font-size: clamp(7px, 1.8vw, 9px);
+  line-height: 1;
 }
 
 .lessonChip strong {
-  font-size: 15px;
+  font-size: clamp(12px, 3.2vw, 14px);
+  line-height: 1;
+  transform: translateY(2px);
 }
 
 .lessonChip.filled {

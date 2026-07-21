@@ -728,7 +728,8 @@ function Leaderboard({
                   key={cell.lessonNumber}
                   title={`ДЗ ${cell.lessonNumber}: ${cell.score ?? "—"}`}
                 >
-                  {cell.score ?? "—"}
+                  <small>{cell.lessonNumber}</small>
+                  <strong>{cell.score ?? "—"}</strong>
                 </span>
               ))}
             </div>
