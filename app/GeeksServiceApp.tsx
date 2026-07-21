@@ -474,7 +474,28 @@ function Leaderboard({
               <span className="place">{student.place}</span>
               <Avatar student={student} />
               <div className="studentInfo">
-                <strong>{student.displayName}</strong>
+                {editingStudentId === student.id ? (
+                  <input
+                    ref={editInputRef}
+                    className="inlineNameInput"
+                    value={editingName}
+                    disabled={savingName}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
+                    onBlur={() => void saveName(student)}
+                    onChange={(event) => setEditingName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        event.currentTarget.blur();
+                      }
+                      if (event.key === "Escape") setEditingStudentId(null);
+                    }}
+                    aria-label="Student name"
+                  />
+                ) : (
+                  <strong>{student.displayName}</strong>
+                )}
                 <span>{student.completedLessons}/12 домашек</span>
               </div>
               <button
@@ -491,26 +512,6 @@ function Leaderboard({
             </div>
             {expandedStudentId === student.id && (
               <div className="lessonEditor">
-                {editingStudentId === student.id && (
-                  <div className="nameEditor">
-                    <input
-                      ref={editInputRef}
-                      value={editingName}
-                      onChange={(event) => setEditingName(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") void saveName(student);
-                        if (event.key === "Escape") setEditingStudentId(null);
-                      }}
-                      placeholder="Имя ученика"
-                    />
-                    <button type="button" disabled={savingName} onClick={() => void saveName(student)}>
-                      OK
-                    </button>
-                    <button type="button" disabled={savingName} onClick={() => setEditingStudentId(null)}>
-                      ×
-                    </button>
-                  </div>
-                )}
                 <div className="lessonGrid">
                   {student.scores.map((cell) => {
                     return (
@@ -570,17 +571,17 @@ function Leaderboard({
 
 function Avatar({ student }: { student: StudentView }) {
   const [failed, setFailed] = useState(false);
-  const initials = student.displayName
+  const initial = student.displayName
     .split(/\s+/)
     .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join("");
+    .at(0)
+    ?.at(0)
+    ?.toUpperCase();
 
   if (shouldUseAvatar(student) && !failed) {
     return <img className="avatar" src={student.avatarUrl} alt="" onError={() => setFailed(true)} />;
   }
-  return <span className="avatar fallback">{initials || "G"}</span>;
+  return <span className="avatar fallback">{initial || "G"}</span>;
 }
 
 const knownMissingTelegramAvatars = new Set(["akyl1230", "chinaronaldo"]);

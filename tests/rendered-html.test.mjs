@@ -17,7 +17,10 @@ test("ships Geeks Service page instead of the starter preview", async () => {
 });
 
 test("leaderboard cards show score instead of generic TOP badges", async () => {
-  const app = await readFile(new URL("../app/GeeksServiceApp.tsx", import.meta.url), "utf8");
+  const [app, css] = await Promise.all([
+    readFile(new URL("../app/GeeksServiceApp.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
+  ]);
   assert.match(app, /student\.totalScore/);
   assert.doesNotMatch(app, /pointsBehindLeader === 0 \? "TOP"/);
   assert.doesNotMatch(app, /<h1>/);
@@ -28,9 +31,12 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /\/12 домашек/);
   assert.match(app, /lessonEditor/);
   assert.match(app, /addToggle/);
-  assert.match(app, /nameEditor/);
+  assert.match(app, /inlineNameInput/);
+  assert.doesNotMatch(app, /nameEditor/);
   assert.doesNotMatch(app, /Railway/);
   assert.doesNotMatch(app, /sectionTitle/);
+  assert.match(css, /\.delta\s*{[^}]*background:\s*transparent/s);
+  assert.match(css, /\.lessonChip\.filled\s*{[^}]*background:\s*var\(--yellow\)/s);
   assert.doesNotMatch(app, /добавить ученика/);
 });
 
