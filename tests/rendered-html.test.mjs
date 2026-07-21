@@ -49,9 +49,13 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.delta\s*{[^}]*-webkit-text-stroke:\s*0 transparent/s);
   assert.match(css, /\.student\s*{[^}]*overflow:\s*visible/s);
   assert.match(css, /\.leaderboard\s*{[^}]*user-select:\s*none/s);
-  assert.match(css, /\.lessonTabs\s*{[^}]*grid-template-columns:\s*repeat\(12,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(css, /\.lessonTabs\s*{[^}]*display:\s*flex/s);
+  assert.match(css, /\.lessonTabs\s*{[^}]*justify-content:\s*center/s);
   assert.match(css, /\.lessonTabs\s*{[^}]*pointer-events:\s*none/s);
+  assert.match(css, /\.lessonTab\s*{[^}]*width:\s*clamp\(20px,\s*5\.3vw,\s*24px\)/s);
+  assert.match(css, /\.lessonTab\s*{[^}]*height:\s*clamp\(20px,\s*5\.3vw,\s*24px\)/s);
   assert.match(css, /\.lessonTab\.filled\s*{[^}]*background:\s*var\(--yellow\)/s);
+  assert.match(css, /\.student\.expanded \.lessonTabs\s*{[^}]*opacity:\s*0/s);
   assert.match(css, /\.groupBadgeText\s*{[^}]*animation:\s*badgeSwap 760ms/s);
   assert.match(css, /@keyframes badgeSwap/);
   assert.match(css, /\.lessonChip\.filled\s*{[^}]*background:\s*var\(--yellow\)/s);
