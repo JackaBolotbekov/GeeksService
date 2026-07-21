@@ -558,19 +558,9 @@ button:disabled {
     0 5px 10px rgba(0, 0, 0, 0.12);
 }
 
-.lessonTab small {
-  position: absolute;
-  top: 2px;
-  left: 3px;
-  color: #8f949d;
-  font-size: clamp(6px, 1.65vw, 8px);
-  font-weight: 950;
-  line-height: 1;
-}
-
 .lessonTab strong {
   color: inherit;
-  font-size: clamp(10px, 2.8vw, 12px);
+  font-size: clamp(10px, 2.9vw, 13px);
   font-weight: 950;
   line-height: 1;
   transform: translateY(1px);
@@ -583,10 +573,6 @@ button:disabled {
     inset 0 -2px 0 rgba(17, 19, 27, 0.14),
     0 3px 0 rgba(17, 19, 27, 0.92),
     0 5px 10px rgba(0, 0, 0, 0.12);
-}
-
-.lessonTab.filled small {
-  color: rgba(17, 19, 27, 0.58);
 }
 
 .lessonTab.filled strong {

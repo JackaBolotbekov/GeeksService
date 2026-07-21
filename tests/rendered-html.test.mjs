@@ -42,9 +42,9 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /lessonEditor/);
   assert.match(app, /lessonTabs/);
   assert.match(app, /lessonTab/);
-  assert.match(app, /<small>\{cell\.lessonNumber\}<\/small>/);
   assert.match(app, /<strong>\{cell\.score \?\? cell\.lessonNumber\}<\/strong>/);
   assert.doesNotMatch(app, /<span>\{cell\.lessonNumber\}<\/span>/);
+  assert.doesNotMatch(app, /<small>\{cell\.lessonNumber\}<\/small>/);
   assert.match(app, /addToggle/);
   assert.match(app, /editToggle/);
   assert.match(app, /bulkEditMode/);
@@ -89,7 +89,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.lessonTabs\s*{[^}]*pointer-events:\s*none/s);
   assert.match(css, /\.lessonTab\s*{[^}]*width:\s*clamp\(20px,\s*5\.35vw,\s*25px\)/s);
   assert.match(css, /\.lessonTab\s*{[^}]*height:\s*clamp\(20px,\s*5\.3vw,\s*24px\)/s);
-  assert.match(css, /\.lessonTab small\s*{[^}]*position:\s*absolute/s);
+  assert.doesNotMatch(css, /\.lessonTab small/);
   assert.match(css, /\.lessonTab\.filled\s*{[^}]*background:\s*var\(--yellow\)/s);
   assert.match(css, /\.student\.expanded \.lessonTabs,\s*\.student\.bulkEditing \.lessonTabs\s*{[^}]*opacity:\s*0/s);
   assert.doesNotMatch(css, /\.student\.editing/);
