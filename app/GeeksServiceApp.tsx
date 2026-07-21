@@ -124,7 +124,7 @@ function homeworkLabel(completedLessons: number) {
   return completedLessons === 12 ? "12 из 12 ✅" : `${completedLessons} из 12 ДЗ`;
 }
 
-const GROUP_BADGES = ["VibeCoding-1", "Урок - 6"] as const;
+const GROUP_BADGES = ["VibeCoding-1", "6 урок >"] as const;
 
 function RotatingGroupBadge() {
   const [badgeIndex, setBadgeIndex] = useState(0);
@@ -133,7 +133,7 @@ function RotatingGroupBadge() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       setBadgeIndex((current) => (current + 1) % GROUP_BADGES.length);
-    }, 2600);
+    }, 3200);
     return () => window.clearInterval(timer);
   }, []);
 

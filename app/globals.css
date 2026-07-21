@@ -155,7 +155,7 @@ button:disabled {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
-  animation: badgeSwap 420ms cubic-bezier(0.2, 0.9, 0.2, 1);
+  animation: badgeSwap 760ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .addToggle {
@@ -686,8 +686,8 @@ button:disabled {
 @keyframes badgeSwap {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.98);
-    filter: blur(3px);
+    transform: translateY(5px) scale(0.99);
+    filter: blur(2px);
   }
   to {
     opacity: 1;
