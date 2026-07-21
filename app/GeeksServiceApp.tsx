@@ -116,8 +116,12 @@ function useLockedViewportZoom() {
     const preventZoomGesture: EventListener = (event) => {
       event.preventDefault();
     };
-    const preventMultiTouchZoom = (event: TouchEvent) => {
-      if (event.touches.length > 1) event.preventDefault();
+    const preventWheelZoom = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) event.preventDefault();
+    };
+    const preventKeyboardZoom = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (["+", "=", "-", "_", "0"].includes(event.key)) event.preventDefault();
     };
     let lastTouchEnd = 0;
     const preventDoubleTapZoom = (event: TouchEvent) => {
@@ -129,7 +133,8 @@ function useLockedViewportZoom() {
     document.addEventListener("gesturestart", preventZoomGesture, options);
     document.addEventListener("gesturechange", preventZoomGesture, options);
     document.addEventListener("gestureend", preventZoomGesture, options);
-    document.addEventListener("touchmove", preventMultiTouchZoom, options);
+    document.addEventListener("wheel", preventWheelZoom, options);
+    document.addEventListener("keydown", preventKeyboardZoom, options);
     document.addEventListener("touchend", preventDoubleTapZoom, options);
     document.addEventListener("dblclick", preventZoomGesture, options);
 
@@ -137,7 +142,8 @@ function useLockedViewportZoom() {
       document.removeEventListener("gesturestart", preventZoomGesture);
       document.removeEventListener("gesturechange", preventZoomGesture);
       document.removeEventListener("gestureend", preventZoomGesture);
-      document.removeEventListener("touchmove", preventMultiTouchZoom);
+      document.removeEventListener("wheel", preventWheelZoom);
+      document.removeEventListener("keydown", preventKeyboardZoom);
       document.removeEventListener("touchend", preventDoubleTapZoom);
       document.removeEventListener("dblclick", preventZoomGesture);
     };

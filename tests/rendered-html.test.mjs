@@ -53,7 +53,11 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /bulkTelegram/);
   assert.match(app, /useLockedViewportZoom/);
   assert.match(app, /gesturestart/);
-  assert.match(app, /touches\.length > 1/);
+  assert.match(app, /preventWheelZoom/);
+  assert.match(app, /event\.ctrlKey \|\| event\.metaKey/);
+  assert.match(app, /preventKeyboardZoom/);
+  assert.doesNotMatch(app, /touchmove/);
+  assert.doesNotMatch(app, /touches\.length > 1/);
   assert.match(app, /telegramUsername/);
   assert.match(app, /telegramUserId/);
   assert.match(app, /telegramDraftValue/);
