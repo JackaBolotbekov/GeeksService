@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useEffect, useState } from "react";
+import { PointerEvent, useEffect, useRef, useState } from "react";
 import type { AdminStudentsResponse, AuthResponse, LeaderboardResponse, MeResponse, StudentView } from "@/lib/types";
 
 declare global {
@@ -53,6 +53,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   const [isPending, setIsPending] = useState(false);
   const [leaderboard, setLeaderboard] = useState<StudentView[]>(initialStudents);
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
 
   const applyAdminResponse = (next: AdminStudentsResponse) => {
     setLeaderboard(next.students.filter((student) => student.status === "active"));
@@ -106,7 +107,20 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
           <span className="bolt">G</span>
           <span>GEEKS<span>Service</span></span>
         </div>
-        <div className="status" aria-label="Online"><span /></div>
+        <div className="topActions">
+          {isAdmin && sessionToken && (
+            <button
+              type="button"
+              className="addToggle"
+              aria-label={showAdminPanel ? "Скрыть добавление ученика" : "Добавить ученика"}
+              aria-expanded={showAdminPanel}
+              onClick={() => setShowAdminPanel((current) => !current)}
+            >
+              +
+            </button>
+          )}
+          <div className="status" aria-label="Online"><span /></div>
+        </div>
       </header>
 
       {state === "loading" && <Panel text="Загружаю рейтинг..." />}
@@ -115,7 +129,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
 
       {state === "ready" && (
         <>
-          {isAdmin && sessionToken && (
+          {isAdmin && sessionToken && showAdminPanel && (
             <AdminPanel
               sessionToken={sessionToken}
               onChange={applyAdminResponse}
@@ -131,6 +145,14 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
               const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}/scores/${lessonNumber}`, {
                 method: "PUT",
                 body: JSON.stringify({ score }),
+              }, sessionToken);
+              applyAdminResponse(response);
+            }}
+            onNameChange={async (student, displayName) => {
+              if (!sessionToken) return;
+              const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}`, {
+                method: "PATCH",
+                body: JSON.stringify({ displayName }),
               }, sessionToken);
               applyAdminResponse(response);
             }}
@@ -151,7 +173,6 @@ function AdminPanel({
   const [displayName, setDisplayName] = useState("");
   const [telegram, setTelegram] = useState("");
   const [busy, setBusy] = useState(false);
-  const [syncing, setSyncing] = useState(false);
 
   const createStudent = async () => {
     if (!displayName.trim()) return;
@@ -169,18 +190,6 @@ function AdminPanel({
     }
   };
 
-  const syncRailway = async () => {
-    setSyncing(true);
-    try {
-      const response = await api<AdminStudentsResponse>("/api/admin/import-railway", {
-        method: "POST",
-      }, sessionToken);
-      onChange(response);
-    } finally {
-      setSyncing(false);
-    }
-  };
-
   return (
     <section className="admin">
       <div className="sectionTitle">
@@ -191,9 +200,6 @@ function AdminPanel({
         <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Имя ученика" />
         <input value={telegram} onChange={(event) => setTelegram(event.target.value)} placeholder="@username или Telegram ID" />
         <button type="button" disabled={busy} onClick={createStudent}>Добавить</button>
-        <button type="button" className="syncButton" disabled={syncing} onClick={syncRailway}>
-          {syncing ? "Синх..." : "Синх Railway"}
-        </button>
       </div>
     </section>
   );
@@ -205,15 +211,50 @@ function Leaderboard({
   expandedStudentId,
   onToggleStudent,
   onScoreChange,
+  onNameChange,
 }: {
   students: StudentView[];
   isAdmin: boolean;
   expandedStudentId: string | null;
   onToggleStudent: (studentId: string) => void;
   onScoreChange: (student: StudentView, lessonNumber: number, score: number | null) => Promise<void>;
+  onNameChange: (student: StudentView, displayName: string) => Promise<void>;
 }) {
   const [activeLesson, setActiveLesson] = useState<{ studentId: string; lessonNumber: number } | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
+  const [savingName, setSavingName] = useState(false);
+  const longPressTimer = useRef<number | null>(null);
+  const editInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!editingStudentId) return;
+    const focusId = window.setTimeout(() => {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }, 30);
+    return () => window.clearTimeout(focusId);
+  }, [editingStudentId]);
+
+  const clearLongPress = () => {
+    if (longPressTimer.current === null) return;
+    window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = null;
+  };
+
+  const startLongPress = (event: PointerEvent<HTMLElement>, student: StudentView) => {
+    if (!isAdmin) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button,input,select")) return;
+    clearLongPress();
+    longPressTimer.current = window.setTimeout(() => {
+      setEditingStudentId(student.id);
+      setEditingName(student.displayName);
+      setActiveLesson(null);
+      onToggleStudent(student.id);
+    }, 550);
+  };
 
   const saveScore = async (student: StudentView, lessonNumber: number, score: number | null) => {
     const key = `${student.id}:${lessonNumber}`;
@@ -226,6 +267,21 @@ function Leaderboard({
     }
   };
 
+  const saveName = async (student: StudentView) => {
+    const nextName = editingName.trim();
+    if (!nextName || nextName === student.displayName) {
+      setEditingStudentId(null);
+      return;
+    }
+    setSavingName(true);
+    try {
+      await onNameChange(student, nextName);
+      setEditingStudentId(null);
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   if (students.length === 0) return <Panel text="Пока нет активных учеников" />;
   return (
     <section className="leaderboard">
@@ -234,7 +290,16 @@ function Leaderboard({
         const activeForStudent = activeLesson?.studentId === student.id ? activeLesson.lessonNumber : null;
         return (
           <article className={`student ${student.isCurrentUser ? "current" : ""} ${isExpanded ? "expanded" : ""}`} key={student.id}>
-            <div className="studentMain">
+            <div
+              className="studentMain"
+              onPointerDown={(event) => startLongPress(event, student)}
+              onPointerUp={clearLongPress}
+              onPointerLeave={clearLongPress}
+              onPointerCancel={clearLongPress}
+              onContextMenu={(event) => {
+                if (isAdmin) event.preventDefault();
+              }}
+            >
               <span className="place">{student.place}</span>
               <Avatar student={student} />
               <div className="studentInfo">
@@ -255,6 +320,26 @@ function Leaderboard({
             </div>
             {expandedStudentId === student.id && (
               <div className="lessonEditor">
+                {editingStudentId === student.id && (
+                  <div className="nameEditor">
+                    <input
+                      ref={editInputRef}
+                      value={editingName}
+                      onChange={(event) => setEditingName(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void saveName(student);
+                        if (event.key === "Escape") setEditingStudentId(null);
+                      }}
+                      placeholder="Имя ученика"
+                    />
+                    <button type="button" disabled={savingName} onClick={() => saveName(student)}>
+                      OK
+                    </button>
+                    <button type="button" disabled={savingName} onClick={() => setEditingStudentId(null)}>
+                      ×
+                    </button>
+                  </div>
+                )}
                 <div className="lessonGrid">
                   {student.scores.map((cell) => {
                     const key = `${student.id}:${cell.lessonNumber}`;

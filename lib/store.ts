@@ -253,9 +253,14 @@ export async function upsertTelegramStudent(input: {
   const avatarUrl = input.avatarUrl ?? publicTelegramAvatar(telegramUsername);
 
   if (existingById) {
+    if (telegramUsername) {
+      await db.prepare("UPDATE students SET telegram_username = NULL WHERE telegram_username = ? AND id <> ?")
+        .bind(telegramUsername, existingById.id)
+        .run();
+    }
     await db.prepare(`
       UPDATE students
-      SET telegram_username = COALESCE(?, telegram_username), avatar_url = COALESCE(?, avatar_url), last_seen_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      SET telegram_username = ?, avatar_url = COALESCE(?, avatar_url), last_seen_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).bind(telegramUsername, avatarUrl, existingById.id).run();
     return (await listAllStudents(input.telegramUserId)).find((student) => student.id === existingById.id) as StudentView;

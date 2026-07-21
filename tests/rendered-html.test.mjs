@@ -27,18 +27,25 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /домашек ·/);
   assert.match(app, /\/12 домашек/);
   assert.match(app, /lessonEditor/);
+  assert.match(app, /addToggle/);
+  assert.match(app, /nameEditor/);
+  assert.doesNotMatch(app, /Railway/);
 });
 
 test("includes leaderboard and admin API surfaces", async () => {
-  const [leaderboardRoute, adminRoute, telegramRoute, importRoute] = await Promise.all([
+  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, store] = await Promise.all([
     readFile(new URL("../app/api/leaderboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/students/[studentId]/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/auth/telegram/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/import-railway/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/store.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(leaderboardRoute, /listStudents/);
   assert.match(adminRoute, /createStudent/);
+  assert.match(studentRoute, /updateStudent/);
   assert.match(telegramRoute, /validateTelegramInitData/);
   assert.match(importRoute, /importStudentsSnapshot/);
+  assert.match(store, /SET telegram_username = \?, avatar_url = COALESCE/);
 });

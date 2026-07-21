@@ -63,6 +63,7 @@ button {
 
 .topbar,
 .brand,
+.topActions,
 .status,
 .student,
 .studentMain,
@@ -118,12 +119,36 @@ button {
   font-size: 0;
 }
 
+.topActions {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .status span {
   width: 11px;
   height: 11px;
   border-radius: 99px;
   background: var(--green);
   box-shadow: 0 0 18px var(--green);
+}
+
+.addToggle {
+  width: 42px;
+  height: 42px;
+  border: 2px solid #11131b;
+  border-radius: 15px;
+  background: var(--yellow);
+  color: var(--ink);
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 950;
+  box-shadow: 4px 4px 0 #11131b;
+}
+
+.addToggle[aria-expanded="true"] {
+  transform: rotate(45deg);
+  box-shadow: 2px 2px 0 #11131b;
 }
 
 .sectionTitle span {
@@ -155,7 +180,7 @@ button {
 
 .admin {
   padding: 14px;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   overflow: hidden;
 }
 
@@ -195,12 +220,6 @@ button {
   color: var(--ink);
   padding: 0 18px;
   font-weight: 900;
-}
-
-.syncButton {
-  background: transparent !important;
-  color: white !important;
-  border: 1px solid var(--line) !important;
 }
 
 .scoreList {
@@ -421,6 +440,38 @@ button {
   padding: 8px;
   border-radius: 16px;
   background: #151720;
+}
+
+.nameEditor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px 38px;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.nameEditor input {
+  min-width: 0;
+  height: 42px;
+  border: 2px solid #12141b;
+  border-radius: 14px;
+  background: white;
+  color: var(--ink);
+  padding: 0 10px;
+  outline: none;
+  font-weight: 900;
+}
+
+.nameEditor button {
+  height: 42px;
+  border: 2px solid #12141b;
+  border-radius: 14px;
+  background: var(--yellow);
+  color: var(--ink);
+  font-weight: 950;
+}
+
+.nameEditor button:last-child {
+  background: #ffb3b3;
 }
 
 .scoreOption,
