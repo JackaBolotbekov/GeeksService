@@ -37,7 +37,9 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /nameEditor/);
   assert.doesNotMatch(app, /Railway/);
   assert.doesNotMatch(app, /sectionTitle/);
-  assert.match(css, /\.delta\s*{[^}]*background:\s*transparent/s);
+  assert.match(css, /\.delta\s*{[^}]*background:\s*linear-gradient/s);
+  assert.match(css, /\.delta\s*{[^}]*-webkit-text-stroke:\s*0 transparent/s);
+  assert.match(css, /\.leaderboard\s*{[^}]*user-select:\s*none/s);
   assert.match(css, /\.lessonChip\.filled\s*{[^}]*background:\s*var\(--yellow\)/s);
   await access(new URL("../public/geeks-lightning.png", import.meta.url));
   assert.doesNotMatch(app, /добавить ученика/);
