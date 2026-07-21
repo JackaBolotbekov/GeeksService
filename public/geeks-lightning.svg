@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 273 317" role="img" aria-label="Geeks">
+  <defs>
+    <linearGradient id="boltFill" x1="70" y1="18" x2="210" y2="292" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff36b"/>
+      <stop offset="0.46" stop-color="#ffdf26"/>
+      <stop offset="1" stop-color="#f2c300"/>
+    </linearGradient>
+    <filter id="softGlow" x="-28%" y="-24%" width="156%" height="154%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="0" stdDeviation="8" flood-color="#ffdf26" flood-opacity="0.34"/>
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000000" flood-opacity="0.30"/>
+    </filter>
+  </defs>
+  <path
+    d="M64 25 218 14 199 129h49l-34 159H52l15-84H27L64 25Z"
+    fill="url(#boltFill)"
+    filter="url(#softGlow)"
+  />
+  <path
+    d="M128 79c-23 0-40 17-40 40 0 24 18 41 42 41 19 0 35-10 41-27l2-7h-44v-22h74c1 5 1 9 1 13 0 43-31 73-75 73-46 0-80-31-80-72 0-42 34-72 79-72 30 0 55 14 68 38l-31 15c-8-13-21-20-37-20Z"
+    fill="#17191f"
+    transform="rotate(-3 126 118)"
+  />
+</svg>

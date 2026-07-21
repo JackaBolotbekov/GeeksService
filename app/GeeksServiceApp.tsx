@@ -120,6 +120,10 @@ function withScore(students: StudentView[], studentId: string, lessonNumber: num
   }));
 }
 
+function homeworkLabel(completedLessons: number) {
+  return completedLessons === 12 ? "12 из 12 ✅" : `${completedLessons} из 12 ДЗ`;
+}
+
 export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentView[] }) {
   const [state, setState] = useState<LoadState>("ready");
   const [error, setError] = useState<string | null>(null);
@@ -203,7 +207,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
     <main className="shell">
       <header className="topbar">
         <div className="brand">
-          <img className="bolt" src="/geeks-lightning.png" alt="" />
+          <img className="bolt" src="/geeks-lightning.svg" alt="" />
           <span>GEEKS<span>Service</span></span>
         </div>
         <div className="topActions">
@@ -496,7 +500,7 @@ function Leaderboard({
                 ) : (
                   <strong>{student.displayName}</strong>
                 )}
-                <span>{student.completedLessons} из 12 ДЗ</span>
+                <span>{homeworkLabel(student.completedLessons)}</span>
               </div>
               <button
                 type="button"

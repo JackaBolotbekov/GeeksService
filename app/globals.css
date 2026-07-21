@@ -109,14 +109,14 @@ button:disabled {
 }
 
 .bolt {
-  width: clamp(44px, 10vw, 54px);
-  height: clamp(54px, 12vw, 64px);
+  width: clamp(26px, 7vw, 34px);
+  height: clamp(30px, 8vw, 40px);
   display: block;
   object-fit: contain;
-  transform: rotate(-2deg);
+  transform: rotate(-1deg);
   filter:
-    drop-shadow(0 0 10px rgba(255, 223, 38, 0.28))
-    drop-shadow(0 10px 18px rgba(0, 0, 0, 0.28));
+    drop-shadow(0 0 8px rgba(255, 223, 38, 0.24))
+    drop-shadow(0 7px 12px rgba(0, 0, 0, 0.24));
 }
 
 .status {
@@ -516,6 +516,15 @@ button:disabled {
 .lessonChip.filled {
   background: var(--yellow);
   box-shadow: inset 0 -3px 0 rgba(17, 19, 27, 0.12);
+  opacity: 1;
+}
+
+.lessonChip.filled span {
+  color: rgba(17, 19, 27, 0.56);
+}
+
+.lessonChip.filled strong {
+  color: var(--ink);
 }
 
 .lessonChip.active {
@@ -529,9 +538,16 @@ button:disabled {
   transform: translateY(1px) scale(0.97);
 }
 
-.lessonChip:disabled,
 .scoreOption:disabled,
 .scoreClear:disabled {
+  opacity: 0.58;
+}
+
+.lessonChip:disabled {
+  cursor: default;
+}
+
+.lessonChip:disabled:not(.filled) {
   opacity: 0.58;
 }
 
