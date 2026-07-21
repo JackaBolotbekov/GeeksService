@@ -192,10 +192,6 @@ function AdminPanel({
 
   return (
     <section className="admin">
-      <div className="sectionTitle">
-        <span>Админ</span>
-        <strong>добавить ученика</strong>
-      </div>
       <div className="addRow">
         <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Имя ученика" />
         <input value={telegram} onChange={(event) => setTelegram(event.target.value)} placeholder="@username или Telegram ID" />

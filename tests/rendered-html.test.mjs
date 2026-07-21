@@ -30,6 +30,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /addToggle/);
   assert.match(app, /nameEditor/);
   assert.doesNotMatch(app, /Railway/);
+  assert.doesNotMatch(app, /sectionTitle/);
+  assert.doesNotMatch(app, /добавить ученика/);
 });
 
 test("includes leaderboard and admin API surfaces", async () => {

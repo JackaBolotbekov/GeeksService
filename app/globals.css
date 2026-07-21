@@ -68,7 +68,6 @@ button {
 .student,
 .studentMain,
 .scoreHead,
-.sectionTitle,
 .addRow {
   display: flex;
   align-items: center;
@@ -151,14 +150,6 @@ button {
   box-shadow: 2px 2px 0 #11131b;
 }
 
-.sectionTitle span {
-  color: var(--yellow);
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
 .admin,
 .leaderboard,
 .panel {
@@ -184,18 +175,8 @@ button {
   overflow: hidden;
 }
 
-.sectionTitle {
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.sectionTitle strong {
-  font-size: 18px;
-}
-
 .addRow {
   gap: 8px;
-  margin-bottom: 12px;
   flex-wrap: wrap;
 }
 
@@ -392,7 +373,7 @@ button {
 .lessonGrid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 6px;
+  gap: 5px;
 }
 
 .lessonChip,
@@ -407,21 +388,21 @@ button {
 
 .lessonChip {
   min-width: 0;
-  height: 38px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
-  padding: 0 8px;
+  gap: 2px;
+  padding: 0 6px;
 }
 
 .lessonChip span {
   color: #747985;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .lessonChip strong {
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .lessonChip.filled {
@@ -548,7 +529,6 @@ button {
     font-size: 16px;
   }
 
-  .lessonGrid,
   .scorePicker {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
