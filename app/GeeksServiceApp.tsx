@@ -144,6 +144,14 @@ function useLockedViewportZoom() {
   }, []);
 }
 
+function focusEditableFieldEnd(input: HTMLInputElement) {
+  window.requestAnimationFrame(() => {
+    const end = input.value.length;
+    input.setSelectionRange(end, end);
+    input.scrollLeft = input.scrollWidth;
+  });
+}
+
 function rankVisibleStudents(students: StudentView[]): StudentView[] {
   const activeStudents = students
     .filter((student) => student.status === "active")
@@ -650,6 +658,10 @@ function Leaderboard({
                     className="bulkInput bulkName"
                     value={bulkDraft.displayName}
                     disabled={bulkSaving}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    onFocus={(event) => focusEditableFieldEnd(event.currentTarget)}
                     placeholder="Имя"
                     onChange={(event) => updateBulkDraft(student, "displayName", event.target.value)}
                   />
@@ -659,6 +671,10 @@ function Leaderboard({
                     disabled={bulkSaving}
                     placeholder="@username или TG ID"
                     inputMode={isTelegramId(bulkDraft.telegram) ? "numeric" : "text"}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    onFocus={(event) => focusEditableFieldEnd(event.currentTarget)}
                     onChange={(event) => updateBulkDraft(student, "telegram", event.target.value)}
                   />
                 </div>

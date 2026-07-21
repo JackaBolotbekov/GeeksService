@@ -640,10 +640,14 @@ button:disabled {
   height: 42px;
   border: 2px solid #12141b;
   border-radius: 14px;
-  background: white;
+  background: #f4f1e8;
   color: var(--ink);
+  caret-color: #12141b;
   padding: 0 10px;
   outline: none;
+  overflow: hidden;
+  text-overflow: clip;
+  direction: ltr;
   font-size: clamp(16px, 3.8vw, 18px);
   font-weight: 900;
   line-height: 1;
@@ -654,8 +658,17 @@ button:disabled {
 }
 
 .bulkInput:focus {
+  background: #e8ebef;
   border-color: var(--yellow);
-  box-shadow: 0 0 0 4px rgba(255, 223, 38, 0.16);
+  caret-color: var(--ink);
+  box-shadow:
+    0 0 0 4px rgba(255, 223, 38, 0.2),
+    inset 0 0 0 1px rgba(17, 19, 27, 0.08);
+}
+
+.bulkInput::selection {
+  background: rgba(255, 223, 38, 0.48);
+  color: var(--ink);
 }
 
 .bulkInput:disabled {

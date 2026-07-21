@@ -56,10 +56,13 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /telegramDraftValue/);
   assert.match(app, /buildStudentPatch/);
   assert.match(app, /onBulkStudentChange/);
+  assert.match(app, /focusEditableFieldEnd/);
+  assert.match(app, /input\.scrollLeft = input\.scrollWidth/);
+  assert.match(app, /autoCorrect="off"/);
+  assert.match(app, /spellCheck=\{false\}/);
   assert.doesNotMatch(app, /studentEditPanel/);
   assert.doesNotMatch(app, /editChoices/);
   assert.doesNotMatch(app, /studentEditInput/);
-  assert.doesNotMatch(app, /setSelectionRange/);
   assert.doesNotMatch(app, /startLongPress/);
   assert.doesNotMatch(app, /longPressTimer/);
   assert.doesNotMatch(app, /onPointerDown/);
@@ -92,7 +95,12 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.bulkActions\s*{[^}]*position:\s*sticky/s);
   assert.match(css, /\.bulkFields\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.15fr\) minmax\(0,\s*0\.85fr\)/s);
   assert.match(css, /\.bulkInput\s*{[^}]*font-size:\s*clamp\(16px,\s*3\.8vw,\s*18px\)/s);
+  assert.match(css, /\.bulkInput\s*{[^}]*background:\s*#f4f1e8/s);
+  assert.match(css, /\.bulkInput\s*{[^}]*caret-color:\s*#12141b/s);
+  assert.match(css, /\.bulkInput\s*{[^}]*overflow:\s*hidden/s);
+  assert.match(css, /\.bulkInput:focus\s*{[^}]*background:\s*#e8ebef/s);
   assert.match(css, /\.bulkInput:focus\s*{[^}]*border-color:\s*var\(--yellow\)/s);
+  assert.match(css, /\.bulkInput::selection\s*{[^}]*background:\s*rgba\(255,\s*223,\s*38,\s*0\.48\)/s);
   assert.match(css, /\.groupBadgeText\s*{[^}]*animation:\s*badgeSwap 760ms/s);
   assert.match(css, /@keyframes badgeSwap/);
   assert.match(css, /\.lessonChip\.filled\s*{[^}]*background:\s*var\(--yellow\)/s);
