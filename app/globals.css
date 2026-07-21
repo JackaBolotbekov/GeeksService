@@ -158,7 +158,8 @@ button:disabled {
   animation: badgeSwap 760ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.addToggle {
+.addToggle,
+.editToggle {
   width: 36px;
   height: 36px;
   border: 2px solid #11131b;
@@ -172,18 +173,40 @@ button:disabled {
   transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
 }
 
+.editToggle {
+  width: 34px;
+  height: 34px;
+  border-color: rgba(255, 223, 38, 0.48);
+  background: #22242c;
+  color: var(--yellow);
+  font-size: 22px;
+  box-shadow: 2px 2px 0 #11131b;
+}
+
+.editToggle[aria-pressed="true"] {
+  background: var(--yellow);
+  color: var(--ink);
+  border-color: #11131b;
+  transform: translateY(1px);
+}
+
 .addToggle[aria-expanded="true"] {
   transform: rotate(45deg);
   box-shadow: 2px 2px 0 #11131b;
 }
 
-.addToggle:not(:disabled):active {
+.addToggle:not(:disabled):active,
+.editToggle:not(:disabled):active {
   transform: scale(0.94);
   filter: brightness(1.04);
 }
 
 .addToggle[aria-expanded="true"]:active {
   transform: rotate(45deg) scale(0.94);
+}
+
+.editToggle[aria-pressed="true"]:active {
+  transform: translateY(1px) scale(0.94);
 }
 
 .admin,
@@ -375,6 +398,13 @@ button:disabled {
   padding-bottom: clamp(7px, 1.6vw, 9px);
 }
 
+.student.bulkEditing {
+  min-height: 0;
+  padding: 8px;
+  padding-bottom: 8px;
+  border-radius: 20px;
+}
+
 .student.saving::before {
   content: "";
   position: absolute;
@@ -530,9 +560,100 @@ button:disabled {
 }
 
 .student.expanded .lessonTabs,
-.student.editing .lessonTabs {
+.student.editing .lessonTabs,
+.student.bulkEditing .lessonTabs {
   opacity: 0;
   transform: translateY(6px) scale(0.96);
+}
+
+.bulkActions {
+  position: sticky;
+  top: 6px;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: 0.86fr 1.14fr;
+  gap: 7px;
+  padding: 6px;
+  border: 2px solid #11131b;
+  border-radius: 17px;
+  background: rgba(17, 19, 27, 0.90);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+  animation: panelIn 170ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.bulkCancel,
+.bulkSave {
+  min-width: 0;
+  height: 38px;
+  border: 2px solid #11131b;
+  border-radius: 13px;
+  font-weight: 950;
+  transition:
+    transform 130ms ease,
+    opacity 150ms ease,
+    filter 150ms ease;
+}
+
+.bulkCancel {
+  background: #2a2d38;
+  color: white;
+}
+
+.bulkSave {
+  background: var(--yellow);
+  color: var(--ink);
+}
+
+.bulkCancel:not(:disabled):active,
+.bulkSave:not(:disabled):active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.bulkCancel:disabled,
+.bulkSave:disabled {
+  opacity: 0.62;
+}
+
+.bulkStudentRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+}
+
+.bulkFields {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 7px;
+}
+
+.bulkInput {
+  min-width: 0;
+  width: 100%;
+  height: 42px;
+  border: 2px solid #12141b;
+  border-radius: 14px;
+  background: white;
+  color: var(--ink);
+  padding: 0 10px;
+  outline: none;
+  font-size: clamp(15px, 3.8vw, 18px);
+  font-weight: 900;
+  line-height: 1;
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+.bulkInput:focus {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 4px rgba(255, 223, 38, 0.16);
+}
+
+.bulkInput:disabled {
+  opacity: 0.62;
 }
 
 .lessonEditor {
@@ -669,7 +790,7 @@ button:disabled {
 
 .editChoices {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 5px;
 }
 
@@ -911,6 +1032,24 @@ button:disabled {
     height: 34px;
     border-radius: 12px;
     font-size: 24px;
+  }
+
+  .editToggle {
+    width: 32px;
+    height: 32px;
+    border-radius: 12px;
+    font-size: 20px;
+  }
+
+  .bulkFields {
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .bulkInput {
+    height: 36px;
+    border-radius: 12px;
+    font-size: 15px;
   }
 
   .studentInfo strong {

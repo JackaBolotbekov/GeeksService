@@ -41,7 +41,17 @@ type StudentPatch = {
   avatarUrl?: string | null;
 };
 
-type EditField = "displayName" | "telegramUsername" | "telegramUserId";
+type StudentDraft = {
+  displayName: string;
+  telegram: string;
+};
+
+type StudentChange = {
+  student: StudentView;
+  patch: StudentPatch;
+};
+
+type EditField = keyof StudentDraft;
 
 async function api<T>(path: string, options: RequestInit = {}, sessionToken?: string): Promise<T> {
   const response = await fetch(path, {
@@ -143,6 +153,61 @@ function publicTelegramAvatarUrl(username: string | null | undefined): string | 
   return normalized ? `https://t.me/i/userpic/320/${encodeURIComponent(normalized)}.jpg` : null;
 }
 
+function telegramDraftValue(student: StudentView): string {
+  if (student.telegramUsername) return `@${student.telegramUsername}`;
+  return student.telegramUserId ?? "";
+}
+
+function isTelegramId(value: string): boolean {
+  return /^\d{1,20}$/.test(value.trim());
+}
+
+function buildStudentPatch(student: StudentView, draft: StudentDraft): StudentPatch | null {
+  const displayName = draft.displayName.trim();
+  const telegram = draft.telegram.trim();
+  if (!displayName) throw new Error("Имя ученика обязательно");
+
+  const patch: StudentPatch = {};
+  if (displayName !== student.displayName) patch.displayName = displayName;
+
+  if (telegram !== telegramDraftValue(student)) {
+    if (!telegram) {
+      patch.telegramUserId = null;
+      patch.telegramUsername = null;
+      patch.avatarUrl = null;
+    } else if (isTelegramId(telegram)) {
+      patch.telegramUserId = telegram;
+      if (student.telegramUsername) {
+        patch.telegramUsername = null;
+        patch.avatarUrl = null;
+      }
+    } else {
+      const telegramUsername = normalizeUsernameInput(telegram);
+      patch.telegramUsername = telegramUsername;
+      patch.avatarUrl = publicTelegramAvatarUrl(telegramUsername);
+    }
+  }
+
+  return Object.keys(patch).length ? patch : null;
+}
+
+function mergeStudentPatch(student: StudentView, patch: StudentPatch): StudentView {
+  const nextUsername = patch.telegramUsername === undefined
+    ? student.telegramUsername
+    : normalizeUsernameInput(patch.telegramUsername);
+  const nextAvatarUrl = patch.avatarUrl === undefined
+    ? (nextUsername && nextUsername !== student.telegramUsername ? publicTelegramAvatarUrl(nextUsername) : student.avatarUrl)
+    : patch.avatarUrl;
+
+  return {
+    ...student,
+    displayName: patch.displayName ?? student.displayName,
+    telegramUsername: nextUsername,
+    telegramUserId: patch.telegramUserId === undefined ? student.telegramUserId : patch.telegramUserId,
+    avatarUrl: nextAvatarUrl,
+  };
+}
+
 const GROUP_BADGES = ["VibeCoding-1", "6 урок >"] as const;
 
 function RotatingGroupBadge() {
@@ -172,6 +237,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   const [leaderboard, setLeaderboard] = useState<StudentView[]>(initialStudents);
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [bulkEditMode, setBulkEditMode] = useState(false);
   const leaderboardRef = useRef(leaderboard);
 
   useEffect(() => {
@@ -203,6 +269,18 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
     runWithViewTransition(() => {
       setExpandedStudentId((current) => current === studentId ? null : studentId);
     });
+  };
+
+  const updateStudentOnServer = async (student: StudentView, patch: StudentPatch, token: string): Promise<AdminStudentsResponse> => {
+    const nextStudent = mergeStudentPatch(student, patch);
+    const body = {
+      ...patch,
+      ...(patch.telegramUsername !== undefined && nextStudent.telegramUsername ? { avatarUrl: publicTelegramAvatarUrl(nextStudent.telegramUsername) } : {}),
+    };
+    return api<AdminStudentsResponse>(`/api/admin/students/${student.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }, token);
   };
 
   useEffect(() => {
@@ -246,18 +324,40 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
         <div className="topActions">
           <RotatingGroupBadge />
           {isAdmin && sessionToken && (
-            <button
-              type="button"
-              className="addToggle"
-              aria-label={showAdminPanel ? "Скрыть добавление ученика" : "Добавить ученика"}
-              aria-expanded={showAdminPanel}
-              onClick={() => {
-                hapticImpact("light");
-                runWithViewTransition(() => setShowAdminPanel((current) => !current));
-              }}
-            >
-              +
-            </button>
+            <>
+              <button
+                type="button"
+                className="editToggle"
+                aria-label={bulkEditMode ? "Закрыть редактирование учеников" : "Редактировать учеников"}
+                aria-pressed={bulkEditMode}
+                onClick={() => {
+                  hapticImpact("light");
+                  runWithViewTransition(() => {
+                    setBulkEditMode((current) => !current);
+                    setShowAdminPanel(false);
+                    setExpandedStudentId(null);
+                  });
+                }}
+              >
+                ✎
+              </button>
+              <button
+                type="button"
+                className="addToggle"
+                aria-label={showAdminPanel ? "Скрыть добавление ученика" : "Добавить ученика"}
+                aria-expanded={showAdminPanel}
+                onClick={() => {
+                  hapticImpact("light");
+                  runWithViewTransition(() => {
+                    setShowAdminPanel((current) => !current);
+                    setBulkEditMode(false);
+                    setExpandedStudentId(null);
+                  });
+                }}
+              >
+                +
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -275,9 +375,16 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
             />
           )}
           <Leaderboard
+            key={bulkEditMode ? "bulk-edit" : "score-view"}
             students={leaderboard}
             isAdmin={isAdmin && Boolean(sessionToken)}
             expandedStudentId={expandedStudentId}
+            bulkEditMode={bulkEditMode}
+            onBulkEditClose={() => {
+              runWithViewTransition(() => {
+                setBulkEditMode(false);
+              });
+            }}
             onToggleStudent={toggleStudent}
             onScoreChange={async (student, lessonNumber, score) => {
               if (!sessionToken) return;
@@ -297,33 +404,33 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
             onStudentChange={async (student, patch) => {
               if (!sessionToken) return;
               const previous = leaderboardRef.current;
-              const nextUsername = patch.telegramUsername === undefined
-                ? student.telegramUsername
-                : normalizeUsernameInput(patch.telegramUsername);
-              const nextAvatarUrl = patch.avatarUrl === undefined
-                ? (nextUsername && nextUsername !== student.telegramUsername ? publicTelegramAvatarUrl(nextUsername) : student.avatarUrl)
-                : patch.avatarUrl;
               setLeaderboardSmooth((current) => rankVisibleStudents(current.map((item) =>
-                item.id === student.id
-                  ? {
-                    ...item,
-                    displayName: patch.displayName ?? item.displayName,
-                    telegramUsername: nextUsername,
-                    telegramUserId: patch.telegramUserId === undefined ? item.telegramUserId : patch.telegramUserId,
-                    avatarUrl: nextAvatarUrl,
-                  }
-                  : item,
+                item.id === student.id ? mergeStudentPatch(item, patch) : item,
               )));
               try {
-                const body = {
-                  ...patch,
-                  ...(patch.telegramUsername !== undefined && nextUsername ? { avatarUrl: publicTelegramAvatarUrl(nextUsername) } : {}),
-                };
-                const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}`, {
-                  method: "PATCH",
-                  body: JSON.stringify(body),
-                }, sessionToken);
+                const response = await updateStudentOnServer(student, patch, sessionToken);
                 applyAdminResponse(response);
+              } catch (caught) {
+                setLeaderboardSmooth(previous);
+                throw caught;
+              }
+            }}
+            onBulkStudentChange={async (changes) => {
+              if (!sessionToken || changes.length === 0) return;
+              const previous = leaderboardRef.current;
+              setLeaderboardSmooth((current) => {
+                const patchesById = new Map(changes.map((change) => [change.student.id, change.patch]));
+                return rankVisibleStudents(current.map((item) => {
+                  const patch = patchesById.get(item.id);
+                  return patch ? mergeStudentPatch(item, patch) : item;
+                }));
+              });
+              try {
+                let latest: AdminStudentsResponse | null = null;
+                for (const change of changes) {
+                  latest = await updateStudentOnServer(change.student, change.patch, sessionToken);
+                }
+                if (latest) applyAdminResponse(latest);
               } catch (caught) {
                 setLeaderboardSmooth(previous);
                 throw caught;
@@ -384,22 +491,30 @@ function Leaderboard({
   students,
   isAdmin,
   expandedStudentId,
+  bulkEditMode,
+  onBulkEditClose,
   onToggleStudent,
   onScoreChange,
   onStudentChange,
+  onBulkStudentChange,
 }: {
   students: StudentView[];
   isAdmin: boolean;
   expandedStudentId: string | null;
+  bulkEditMode: boolean;
+  onBulkEditClose: () => void;
   onToggleStudent: (studentId: string) => void;
   onScoreChange: (student: StudentView, lessonNumber: number, score: number | null) => Promise<void>;
   onStudentChange: (student: StudentView, patch: StudentPatch) => Promise<void>;
+  onBulkStudentChange: (changes: StudentChange[]) => Promise<void>;
 }) {
   const [activeLesson, setActiveLesson] = useState<{ studentId: string; lessonNumber: number } | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [editingStudentId, setEditingStudentId] = useState<string | null>(null);
   const [editField, setEditField] = useState<EditField | null>(null);
-  const [editDraft, setEditDraft] = useState({ displayName: "", telegramUsername: "", telegramUserId: "" });
+  const [editDraft, setEditDraft] = useState<StudentDraft>({ displayName: "", telegram: "" });
+  const [bulkDrafts, setBulkDrafts] = useState<Record<string, StudentDraft>>({});
+  const [bulkSaving, setBulkSaving] = useState(false);
   const [savingStudentEdit, setSavingStudentEdit] = useState(false);
   const longPressTimer = useRef<number | null>(null);
   const suppressNextClick = useRef(false);
@@ -420,7 +535,7 @@ function Leaderboard({
   const closeStudentEditor = () => {
     setEditingStudentId(null);
     setEditField(null);
-    setEditDraft({ displayName: "", telegramUsername: "", telegramUserId: "" });
+    setEditDraft({ displayName: "", telegram: "" });
   };
 
   const openStudentEditor = (student: StudentView) => {
@@ -429,8 +544,7 @@ function Leaderboard({
     setEditField(null);
     setEditDraft({
       displayName: student.displayName,
-      telegramUsername: student.telegramUsername ? `@${student.telegramUsername}` : "",
-      telegramUserId: student.telegramUserId ?? "",
+      telegram: telegramDraftValue(student),
     });
     setActiveLesson(null);
   };
@@ -442,7 +556,7 @@ function Leaderboard({
   };
 
   const startLongPress = (event: PointerEvent<HTMLElement>, student: StudentView) => {
-    if (!isAdmin) return;
+    if (!isAdmin || bulkEditMode) return;
     const target = event.target as HTMLElement;
     if (target.closest("button,input,select")) return;
     clearLongPress();
@@ -497,30 +611,30 @@ function Leaderboard({
     setEditDraft((current) => ({ ...current, [field]: value }));
   };
 
+  const updateBulkDraft = (student: StudentView, field: EditField, value: string) => {
+    setBulkDrafts((current) => ({
+      ...current,
+      [student.id]: {
+        displayName: student.displayName,
+        telegram: telegramDraftValue(student),
+        ...current[student.id],
+        [field]: value,
+      },
+    }));
+  };
+
   const saveStudentEdit = async (student: StudentView) => {
-    const displayName = editDraft.displayName.trim();
-    const telegramUsername = normalizeUsernameInput(editDraft.telegramUsername);
-    const telegramUserId = editDraft.telegramUserId.trim() || null;
-    if (!displayName) {
+    let patch: StudentPatch | null = null;
+    try {
+      patch = buildStudentPatch(student, editDraft);
+    } catch {
       hapticNotice("error");
       return;
     }
-    const noChanges =
-      displayName === student.displayName
-      && telegramUsername === student.telegramUsername
-      && telegramUserId === student.telegramUserId;
-    if (noChanges) {
+    if (!patch) {
       closeStudentEditor();
       return;
     }
-    const patch: StudentPatch = {};
-    if (displayName !== student.displayName) patch.displayName = displayName;
-    if (telegramUsername !== student.telegramUsername) {
-      patch.telegramUsername = telegramUsername;
-      patch.avatarUrl = telegramUsername ? publicTelegramAvatarUrl(telegramUsername) : null;
-    }
-    if (telegramUserId !== student.telegramUserId) patch.telegramUserId = telegramUserId;
-
     setSavingStudentEdit(true);
     try {
       await onStudentChange(student, patch);
@@ -533,14 +647,99 @@ function Leaderboard({
     }
   };
 
+  const bulkChanges = () => {
+    const changes: StudentChange[] = [];
+    for (const student of students) {
+      const draft = bulkDrafts[student.id] ?? { displayName: student.displayName, telegram: telegramDraftValue(student) };
+      const patch = buildStudentPatch(student, draft);
+      if (patch) changes.push({ student, patch });
+    }
+    return changes;
+  };
+
+  const saveBulkChanges = async () => {
+    let changes: StudentChange[] = [];
+    try {
+      changes = bulkChanges();
+    } catch {
+      hapticNotice("error");
+      return;
+    }
+    if (changes.length === 0) {
+      onBulkEditClose();
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      await onBulkStudentChange(changes);
+      hapticNotice("success");
+      onBulkEditClose();
+    } catch {
+      hapticNotice("error");
+    } finally {
+      setBulkSaving(false);
+    }
+  };
+
+  let bulkChangeCount = 0;
+  if (bulkEditMode) {
+    try {
+      bulkChangeCount = bulkChanges().length;
+    } catch {
+      bulkChangeCount = 1;
+    }
+  }
+
   if (students.length === 0) return <Panel text="Пока нет активных учеников" />;
   return (
     <section className="leaderboard">
+      {bulkEditMode && (
+        <div className="bulkActions">
+          <button type="button" className="bulkCancel" disabled={bulkSaving} onClick={onBulkEditClose}>Отмена</button>
+          <button type="button" className="bulkSave" disabled={bulkSaving} onClick={() => void saveBulkChanges()}>
+            {bulkSaving ? "Сохраняю..." : bulkChangeCount > 0 ? `Сохранить ${bulkChangeCount}` : "Готово"}
+          </button>
+        </div>
+      )}
       {students.map((student, index) => {
+        const bulkDraft = bulkDrafts[student.id] ?? { displayName: student.displayName, telegram: telegramDraftValue(student) };
         const isExpanded = expandedStudentId === student.id;
         const isEditing = editingStudentId === student.id;
         const activeForStudent = activeLesson?.studentId === student.id ? activeLesson.lessonNumber : null;
         const isSavingStudent = savingKey?.startsWith(`${student.id}:`) ?? false;
+        if (bulkEditMode) {
+          return (
+            <article
+              className={`student bulkEditing ${student.isCurrentUser ? "current" : ""} ${bulkSaving ? "saving" : ""}`}
+              key={student.id}
+              style={{
+                "--rank": index,
+                viewTransitionName: `student-${student.id.replace(/[^a-z0-9_-]/gi, "-")}`,
+              } as CSSProperties}
+            >
+              <div className="bulkStudentRow">
+                <Avatar student={student} />
+                <div className="bulkFields">
+                  <input
+                    className="bulkInput bulkName"
+                    value={bulkDraft.displayName}
+                    disabled={bulkSaving}
+                    placeholder="Имя"
+                    onChange={(event) => updateBulkDraft(student, "displayName", event.target.value)}
+                  />
+                  <input
+                    className="bulkInput bulkTelegram"
+                    value={bulkDraft.telegram}
+                    disabled={bulkSaving}
+                    placeholder="@username или TG ID"
+                    inputMode={isTelegramId(bulkDraft.telegram) ? "numeric" : "text"}
+                    onChange={(event) => updateBulkDraft(student, "telegram", event.target.value)}
+                  />
+                </div>
+              </div>
+            </article>
+          );
+        }
         return (
           <article
             className={`student ${student.isCurrentUser ? "current" : ""} ${isExpanded ? "expanded" : ""} ${isEditing ? "editing" : ""} ${isSavingStudent ? "saving" : ""}`}
@@ -596,8 +795,7 @@ function Leaderboard({
                 <div className="editChoices" role="tablist" aria-label="Что изменить">
                   {[
                     ["displayName", "Имя"],
-                    ["telegramUsername", "@username"],
-                    ["telegramUserId", "TG ID"],
+                    ["telegram", "Telegram"],
                   ].map(([field, label]) => (
                     <button
                       type="button"
@@ -617,16 +815,15 @@ function Leaderboard({
                   <label className="editField">
                     <span>
                       {editField === "displayName" && "Имя ученика"}
-                      {editField === "telegramUsername" && "Telegram username"}
-                      {editField === "telegramUserId" && "Telegram ID"}
+                      {editField === "telegram" && "Telegram"}
                     </span>
                     <input
                       ref={editInputRef}
                       className="studentEditInput"
                       value={editDraft[editField]}
                       disabled={savingStudentEdit}
-                      inputMode={editField === "telegramUserId" ? "numeric" : "text"}
-                      placeholder={editField === "displayName" ? "Имя ученика" : editField === "telegramUsername" ? "@username" : "123456789"}
+                      inputMode={editField === "telegram" && isTelegramId(editDraft.telegram) ? "numeric" : "text"}
+                      placeholder={editField === "displayName" ? "Имя ученика" : "@username или TG ID"}
                       onChange={(event) => updateDraft(editField, event.target.value)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") {
@@ -638,7 +835,7 @@ function Leaderboard({
                     />
                   </label>
                 ) : (
-                  <p className="editHint">Выбери, что изменить: имя, username или Telegram ID.</p>
+                  <p className="editHint">Выбери поле: имя или Telegram (@username / TG ID).</p>
                 )}
                 <div className="editActions">
                   <button type="button" className="editCancel" disabled={savingStudentEdit} onClick={closeStudentEditor}>Отмена</button>
