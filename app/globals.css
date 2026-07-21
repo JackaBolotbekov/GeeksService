@@ -74,7 +74,6 @@ button:disabled {
 .topbar,
 .brand,
 .topActions,
-.status,
 .groupBadge,
 .student,
 .studentMain,
@@ -86,13 +85,14 @@ button:disabled {
 
 .topbar {
   justify-content: space-between;
-  gap: 14px;
+  gap: 8px;
   margin-bottom: clamp(6px, 1.5vw, 10px);
   min-width: 0;
 }
 
 .brand {
-  gap: 10px;
+  flex: 1 1 auto;
+  gap: 8px;
   font-weight: 900;
   letter-spacing: -0.04em;
   text-transform: uppercase;
@@ -104,34 +104,29 @@ button:disabled {
 }
 
 .brand > span:last-child {
+  max-width: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .bolt {
-  width: clamp(26px, 7vw, 34px);
-  height: clamp(30px, 8vw, 40px);
+  width: auto;
+  height: clamp(38px, 10vw, 46px);
   display: block;
   object-fit: contain;
-  transform: rotate(-1deg);
-  filter:
-    drop-shadow(0 0 8px rgba(255, 223, 38, 0.24))
-    drop-shadow(0 7px 12px rgba(0, 0, 0, 0.24));
-}
-
-.status {
-  width: 18px;
   flex: 0 0 auto;
-  justify-content: flex-end;
-  font-size: 0;
+  transform: rotate(-2deg);
+  filter:
+    drop-shadow(0 0 8px rgba(255, 223, 38, 0.22))
+    drop-shadow(0 6px 10px rgba(0, 0, 0, 0.26));
 }
 
 .topActions {
   min-width: 0;
   flex: 0 0 auto;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
 }
 
 .groupBadge {
@@ -152,25 +147,17 @@ button:disabled {
   box-shadow: inset 0 -2px 0 rgba(17, 19, 27, 0.18);
 }
 
-.status span {
-  width: 11px;
-  height: 11px;
-  border-radius: 99px;
-  background: var(--green);
-  box-shadow: 0 0 18px var(--green);
-}
-
 .addToggle {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   border: 2px solid #11131b;
-  border-radius: 15px;
+  border-radius: 13px;
   background: var(--yellow);
   color: var(--ink);
-  font-size: 30px;
+  font-size: 26px;
   line-height: 1;
   font-weight: 950;
-  box-shadow: 4px 4px 0 #11131b;
+  box-shadow: 3px 3px 0 #11131b;
   transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
 }
 
@@ -731,7 +718,7 @@ button:disabled {
 
 @media (max-width: 390px) {
   .brand > span:last-child {
-    max-width: 118px;
+    max-width: none;
   }
 
   .groupBadge {
@@ -741,8 +728,11 @@ button:disabled {
     font-size: 11px;
   }
 
-  .status {
-    font-size: 11px;
+  .addToggle {
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    font-size: 24px;
   }
 
   .studentInfo strong {

@@ -226,7 +226,6 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
               +
             </button>
           )}
-          <div className="status" aria-label="Online"><span /></div>
         </div>
       </header>
 

@@ -28,6 +28,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /VibeCoding-1/);
   assert.doesNotMatch(app, /12 занятий/);
   assert.doesNotMatch(app, />ONLINE</);
+  assert.doesNotMatch(app, /className="status"/);
   assert.doesNotMatch(app, /домашек ·/);
   assert.doesNotMatch(app, /\/12 домашек/);
   assert.match(app, /из 12 ДЗ/);
