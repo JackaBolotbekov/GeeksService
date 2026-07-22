@@ -800,8 +800,8 @@ button:disabled {
   z-index: 1;
   width: 100%;
   min-width: 0;
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: 3px;
+  padding-top: 4px;
   border-top: 2px solid rgba(17, 19, 27, 0.14);
   transform-origin: top;
   animation: revealDown 150ms ease-out both;
@@ -1257,7 +1257,7 @@ button:disabled {
   left: 50%;
   bottom: max(16px, calc(env(safe-area-inset-bottom) + 10px));
   z-index: 60;
-  width: min(360px, calc(100dvw - 24px));
+  width: min(392px, calc(100dvw - 18px));
   height: 64px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 68px minmax(0, 1fr);

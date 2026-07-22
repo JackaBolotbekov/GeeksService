@@ -110,6 +110,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.podiumMedal\.silver\s*{[^}]*--award-mid:\s*#dde3ec/s);
   assert.match(css, /\.podiumMedal\.bronze\s*{[^}]*--award-mid:\s*#d98542/s);
   assert.match(css, /\.bottomNav\s*{[^}]*position:\s*fixed/s);
+  assert.match(css, /\.bottomNav\s*{[^}]*width:\s*min\(392px,\s*calc\(100dvw - 18px\)\)/s);
   assert.match(css, /\.bottomNav\s*{[^}]*pointer-events:\s*none/s);
   assert.match(css, /\.bottomNav::before\s*{[^}]*content:\s*none/s);
   assert.match(css, /\.bottomNavButton\s*{[^}]*pointer-events:\s*auto/s);
@@ -149,6 +150,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.groupBadgeText\s*{[^}]*animation:\s*badgeSwap 760ms/s);
   assert.match(css, /@keyframes badgeSwap/);
   assert.match(css, /\.lessonGrid\s*{[^}]*grid-template-columns:\s*repeat\(12,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(css, /\.lessonEditor\s*{[^}]*margin-top:\s*3px/s);
+  assert.match(css, /\.lessonEditor\s*{[^}]*padding-top:\s*4px/s);
   assert.match(css, /\.lessonChip\s*{[^}]*height:\s*32px/s);
   assert.match(css, /\.lessonChip\s*{[^}]*border-radius:\s*8px/s);
   assert.match(css, /\.lessonChip:not\(\.filled\) strong\s*{[^}]*color:\s*#747985/s);
