@@ -72,7 +72,11 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /BottomNav/);
   assert.match(app, /onProfile/);
   assert.match(app, /activeScreen === "profile" \? "page"/);
+  assert.match(app, /currentStudent/);
+  assert.match(app, /canOpenHomework/);
+  assert.match(app, /visibleScreen/);
   assert.match(app, /navIconHomework/);
+  assert.match(app, /navIconGeeks/);
   assert.match(app, /uploadArrow/);
   assert.match(app, /HomeworkUploadScreen/);
   assert.match(app, /apiForm<HomeworkSubmitResponse>/);
@@ -81,8 +85,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /homeworkDrop/);
   assert.match(app, /homeworkLinksAreValid/);
   assert.match(app, /className="homeworkCard"/);
-  assert.match(app, /Ссылки: github\.com\/\.\.\., @Sites, @telegram_bot/);
-  assert.match(app, /Можешь дополнить от себя\.\./);
+  assert.match(app, /placeholder=\{"Ссылки,\\ngithub,\\n@Sites,\\n@telegram_bot"\}/);
+  assert.match(app, /placeholder="Можешь дополнить от себя\.\."/);
   assert.match(app, /нажми или перетащи/);
   assert.match(app, /\.md \.zip/);
   assert.match(app, /homeworkSubmitActions/);
@@ -91,7 +95,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /homeworkInputRef\.current\?\.click/);
   assert.doesNotMatch(app, /Дополнить от себя/);
   assert.doesNotMatch(app, /Файл домашки/);
-  assert.match(app, /Открой через Telegram, чтобы ДЗ привязалось/);
+  assert.doesNotMatch(app, /Открой через Telegram, чтобы ДЗ привязалось/);
+  assert.match(app, /aria-disabled=\{!canOpenHomework\}/);
   assert.match(app, /uploadFileToYouTube/);
   assert.match(app, /uploadYouTubeChunkWithRetry/);
   assert.match(app, /isRetriableUploadError/);
@@ -168,6 +173,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.bottomNavButton\.active,\s*\.bottomNavPrimary\.active\s*{/s);
   assert.doesNotMatch(css, /\.bottomNavButton\.active,\s*\.bottomNavPrimary\s*{/s);
   assert.match(css, /\.bottomNavPrimary\s*{[^}]*border-radius:\s*999px/s);
+  assert.match(css, /\.bottomNavPrimary\.locked\s*{[^}]*background:\s*linear-gradient/s);
+  assert.match(css, /\.navIconGeeks\s*{[^}]*background:\s*#11131b/s);
   assert.match(css, /\.uploadArrow::before\s*{[^}]*height:\s*15px/s);
   assert.match(css, /\.uploadArrow::after\s*{[^}]*border-bottom:\s*14px solid #11131b/s);
   assert.match(css, /\.uploadScreen\s*{[^}]*padding:\s*2px 0 112px/s);
@@ -175,7 +182,9 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.homeworkCard\s*{[^}]*display:\s*grid/s);
   assert.match(css, /\.homeworkCard\s*{[^}]*background:\s*transparent/s);
   assert.match(css, /\.homeworkCard\s*{[^}]*box-shadow:\s*none/s);
-  assert.match(css, /\.homeworkSubmitActions\s*{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(css, /\.homeworkSubmitActions\s*{[^}]*width:\s*100%/s);
+  assert.match(css, /\.homeworkSubmitActions\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
+  assert.match(css, /\.homeworkSubmitActions \.uploadPrimary\s*{[^}]*width:\s*100%/s);
   assert.match(css, /\.profileScreen\s*{[^}]*padding:\s*0 0 112px/s);
   assert.match(css, /\.calendarCard\s*{[^}]*aspect-ratio:\s*1 \/ 1/s);
   assert.match(css, /\.calendarCard\s*{[^}]*background:\s*var\(--card\)/s);

@@ -487,6 +487,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isPending, setIsPending] = useState(false);
+  const [currentStudent, setCurrentStudent] = useState<StudentView | null>(null);
   const [leaderboard, setLeaderboard] = useState<StudentView[]>(() => {
     const rankedInitial = rankVisibleStudents(initialStudents);
     if (rankedInitial.length > 0) return rankedInitial;
@@ -499,6 +500,8 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   const [bulkEditMode, setBulkEditMode] = useState(false);
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>("leaderboard");
   const leaderboardRef = useRef(leaderboard);
+  const canOpenHomework = Boolean(sessionToken && (isAdmin || currentStudent?.status === "active"));
+  const visibleScreen = activeScreen === "homeworkUpload" && !canOpenHomework ? "leaderboard" : activeScreen;
 
   useEffect(() => {
     leaderboardRef.current = leaderboard;
@@ -640,9 +643,12 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
           setSessionToken(auth.sessionToken);
           setIsAdmin(auth.profile.isAdmin);
           const me = await api<MeResponse>("/api/me", {}, auth.sessionToken);
+          setCurrentStudent(me.student);
           setIsPending(me.pending);
           await refresh(auth.sessionToken, auth.profile.isAdmin);
         } else {
+          setCurrentStudent(null);
+          setIsPending(false);
           await refresh(null, false);
         }
         setState("ready");
@@ -706,12 +712,12 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
 
       {state === "ready" && (
         <>
-          {activeScreen === "homeworkUpload" ? (
+          {visibleScreen === "homeworkUpload" ? (
             <HomeworkUploadScreen
               isAdmin={isAdmin && Boolean(sessionToken)}
               sessionToken={sessionToken}
             />
-          ) : activeScreen === "profile" ? (
+          ) : visibleScreen === "profile" ? (
             <ProfileScreen
               schedule={schedule}
               scheduleError={scheduleError}
@@ -779,12 +785,14 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
             </>
           )}
           <BottomNav
-            activeScreen={activeScreen}
+            activeScreen={visibleScreen}
+            canOpenHomework={canOpenHomework}
             onLeaderboard={() => {
               hapticSelection();
               setActiveScreen("leaderboard");
             }}
             onHomework={() => {
+              if (!canOpenHomework) return;
               hapticImpact("light");
               setActiveScreen("homeworkUpload");
               setShowAdminPanel(false);
@@ -1171,19 +1179,15 @@ function HomeworkUploadScreen({
     }
   };
 
-  if (!isAdmin || !sessionToken) {
+  if (!sessionToken) return null;
+
+  if (!isAdmin) {
     return (
       <section className="uploadScreen">
         <form className="homeworkCard" onSubmit={(event) => {
           event.preventDefault();
           void submitHomework();
         }}>
-          {!sessionToken && (
-            <p className="uploadMessage error">
-              Открой через Telegram, чтобы ДЗ привязалось к твоему профилю.
-            </p>
-          )}
-
           <label className="uploadField">
             <textarea
               className="compactTextarea homeworkLinksInput"
@@ -1191,7 +1195,7 @@ function HomeworkUploadScreen({
               disabled={homeworkBusy}
               maxLength={5000}
               aria-label="Ссылки на домашнее задание"
-              placeholder="Ссылки: github.com/..., @Sites, @telegram_bot"
+              placeholder={"Ссылки,\ngithub,\n@Sites,\n@telegram_bot"}
               onChange={(event) => setHomeworkLinks(event.target.value)}
             />
           </label>
@@ -1202,7 +1206,7 @@ function HomeworkUploadScreen({
               disabled={homeworkBusy}
               maxLength={5000}
               aria-label="Описание домашнего задания"
-              placeholder="Что именно ты сдаёшь и что нужно проверить. Можешь дополнить от себя.."
+              placeholder="Можешь дополнить от себя.."
               onChange={(event) => setHomeworkDescription(event.target.value)}
             />
           </label>
@@ -1239,7 +1243,7 @@ function HomeworkUploadScreen({
           {homeworkMessage && <p className={`uploadMessage ${homeworkPhase === "error" ? "error" : "success"}`}>{homeworkMessage}</p>}
 
           <div className="uploadActions homeworkSubmitActions">
-            <button type="submit" className="uploadPrimary" disabled={homeworkBusy || !sessionToken || !hasHomeworkContent}>
+            <button type="submit" className="uploadPrimary" disabled={homeworkBusy || !hasHomeworkContent}>
               {homeworkBusy ? "Отправляю..." : "Отправить"}
             </button>
           </div>
@@ -1691,15 +1695,19 @@ function podiumMedal(place: number) {
 
 function BottomNav({
   activeScreen,
+  canOpenHomework,
   onLeaderboard,
   onHomework,
   onProfile,
 }: {
   activeScreen: ActiveScreen;
+  canOpenHomework: boolean;
   onLeaderboard: () => void;
   onHomework: () => void;
   onProfile: () => void;
 }) {
+  const homeworkActive = canOpenHomework && activeScreen === "homeworkUpload";
+
   return (
     <nav className="bottomNav" aria-label="Geeks Service">
       <button
@@ -1713,12 +1721,19 @@ function BottomNav({
       </button>
       <button
         type="button"
-        className={`bottomNavButton bottomNavPrimary ${activeScreen === "homeworkUpload" ? "active" : ""}`}
-        aria-label="Отправить ДЗ"
-        aria-current={activeScreen === "homeworkUpload" ? "page" : undefined}
-        onClick={onHomework}
+        className={`bottomNavButton bottomNavPrimary ${homeworkActive ? "active" : ""} ${canOpenHomework ? "" : "locked"}`}
+        aria-label={canOpenHomework ? "Отправить ДЗ" : "ДЗ доступно только ученикам группы"}
+        aria-current={homeworkActive ? "page" : undefined}
+        aria-disabled={!canOpenHomework}
+        onClick={() => {
+          if (canOpenHomework) onHomework();
+        }}
       >
-        <span className="navIcon navIconHomework" aria-hidden="true"><span className="uploadArrow" /><strong>ДЗ</strong></span>
+        {canOpenHomework ? (
+          <span className="navIcon navIconHomework" aria-hidden="true"><span className="uploadArrow" /><strong>ДЗ</strong></span>
+        ) : (
+          <span className="navIcon navIconGeeks" aria-hidden="true"><img src="/geeks-lightning.svg" alt="" /></span>
+        )}
       </button>
       <button
         type="button"
