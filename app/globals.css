@@ -118,15 +118,49 @@ button:disabled {
   min-width: 0;
 }
 
-.brand span span {
+.brand span span,
+.brandRoleSwitcher > span {
   color: var(--yellow);
 }
 
-.brand > span:last-child {
+.brand > span:last-child,
+.brand > button:last-child {
   max-width: none;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.brandRoleSwitcher {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: white;
+  font: inherit;
+  font-weight: 900;
+  letter-spacing: inherit;
+  line-height: 1;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.brandRoleSwitcher > span {
+  display: inline-block;
+  animation: roleLabelSwap 260ms ease both;
+}
+
+.brandRoleSwitcher:active {
+  transform: scale(0.97);
+}
+
+.brandRoleSwitcher:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 3px;
+  border-radius: 4px;
 }
 
 .bolt {
@@ -146,6 +180,28 @@ button:disabled {
   flex: 0 0 auto;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.topbar.previewTeacher {
+  align-items: flex-start;
+}
+
+.topbar.previewTeacher .topActions {
+  width: 112px;
+  display: grid;
+  grid-template-columns: 1fr 36px;
+  gap: 4px;
+}
+
+.topbar.previewTeacher .groupBadge {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: none;
+}
+
+.topbar.previewTeacher .editToggle,
+.topbar.previewTeacher .addToggle {
+  justify-self: end;
 }
 
 .groupBadge {
@@ -1842,6 +1898,17 @@ button:disabled {
   }
 }
 
+@keyframes roleLabelSwap {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes calendarSlideNext {
   from {
     opacity: 0;
@@ -1909,7 +1976,8 @@ button:disabled {
 }
 
 @media (max-width: 390px) {
-  .brand > span:last-child {
+  .brand > span:last-child,
+  .brand > button:last-child {
     max-width: none;
   }
 
@@ -1960,6 +2028,13 @@ button:disabled {
   .scorePicker {
     gap: 3px;
     padding: 5px;
+  }
+}
+
+@media (max-width: 350px) {
+  .topbar.previewTeacher .topActions {
+    width: 76px;
+    grid-template-columns: 36px 36px;
   }
 }
 

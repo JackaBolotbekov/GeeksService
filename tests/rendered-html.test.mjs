@@ -41,6 +41,17 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /<h1>/);
   assert.doesNotMatch(app, /heroStats/);
   assert.match(app, /ScheduleBadge/);
+  assert.match(app, /const TEST_ROLE_ORDER: TestRole\[\] = \["service", "students", "teachers"\]/);
+  assert.match(app, /service: "SERVICE"/);
+  assert.match(app, /students: "STUDENTS"/);
+  assert.match(app, /teachers: "TEACHERS"/);
+  assert.match(app, /setRolePreviewAvailable\(true\)/);
+  assert.match(app, /className="brandRoleSwitcher"/);
+  assert.match(app, /if \(!rolePreviewAvailable\) return/);
+  assert.match(app, /if \(teacherPreview\) \{/);
+  assert.match(app, /previewRole === "students"/);
+  assert.match(css, /\.brandRoleSwitcher\s*{[^}]*background:\s*transparent/s);
+  assert.match(css, /@keyframes roleLabelSwap/);
   assert.match(app, /schedule\.currentLabel/);
   assert.match(app, /VibeCoding-1/);
   assert.match(app, /5600/);

@@ -18,6 +18,14 @@ type LoadState = "loading" | "ready" | "error";
 type ActiveScreen = "leaderboard" | "homeworkUpload" | "profile";
 type UploadPhase = "idle" | "creating" | "uploading" | "done" | "error";
 type HomeworkSubmitPhase = "idle" | "submitting" | "done" | "error";
+type TestRole = "service" | "students" | "teachers";
+
+const TEST_ROLE_ORDER: TestRole[] = ["service", "students", "teachers"];
+const TEST_ROLE_LABELS: Record<TestRole, string> = {
+  service: "SERVICE",
+  students: "STUDENTS",
+  teachers: "TEACHERS",
+};
 
 type YouTubeUploadSessionResponse = {
   uploadUrl: string;
@@ -487,6 +495,8 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isPending, setIsPending] = useState(false);
+  const [rolePreviewAvailable, setRolePreviewAvailable] = useState(false);
+  const [testRole, setTestRole] = useState<TestRole>("service");
   const [currentStudent, setCurrentStudent] = useState<StudentView | null>(null);
   const [leaderboard, setLeaderboard] = useState<StudentView[]>(() => {
     const rankedInitial = rankVisibleStudents(initialStudents);
@@ -500,7 +510,15 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   const [bulkEditMode, setBulkEditMode] = useState(false);
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>("leaderboard");
   const leaderboardRef = useRef(leaderboard);
-  const canOpenHomework = Boolean(sessionToken && (isAdmin || currentStudent?.status === "active"));
+  const teacherPreview = rolePreviewAvailable && testRole === "teachers";
+  const studentPreview = rolePreviewAvailable && testRole === "students";
+  const actualAdmin = Boolean(isAdmin && sessionToken);
+  const effectiveAdmin = actualAdmin || teacherPreview;
+  const canOpenHomework = Boolean(
+    sessionToken && (isAdmin || currentStudent?.status === "active")
+    || teacherPreview
+    || studentPreview,
+  );
   const visibleScreen = activeScreen === "homeworkUpload" && !canOpenHomework ? "leaderboard" : activeScreen;
 
   useEffect(() => {
@@ -579,6 +597,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
 
   useEffect(() => {
     if (state !== "ready" || activeScreen !== "leaderboard") return;
+    if (teacherPreview) return;
     let cancelled = false;
     let inFlight = false;
     const applyLiveLeaderboard = (students: StudentView[]) => {
@@ -626,7 +645,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [activeScreen, isAdmin, sessionToken, state]);
+  }, [activeScreen, isAdmin, sessionToken, state, teacherPreview]);
 
   useEffect(() => {
     const run = async () => {
@@ -636,6 +655,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
         telegramWebApp?.expand?.();
         const initData = telegramWebApp?.initData;
         if (initData) {
+          setRolePreviewAvailable(false);
           const auth = await api<AuthResponse>("/api/auth/telegram", {
             method: "POST",
             body: JSON.stringify({ initData }),
@@ -647,6 +667,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
           setIsPending(me.pending);
           await refresh(auth.sessionToken, auth.profile.isAdmin);
         } else {
+          setRolePreviewAvailable(true);
           setCurrentStudent(null);
           setIsPending(false);
           await refresh(null, false);
@@ -662,16 +683,37 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const cycleTestRole = () => {
+    if (!rolePreviewAvailable) return;
+    hapticSelection();
+    setTestRole((current) => TEST_ROLE_ORDER[(TEST_ROLE_ORDER.indexOf(current) + 1) % TEST_ROLE_ORDER.length]);
+    setActiveScreen("leaderboard");
+    setShowAdminPanel(false);
+    setBulkEditMode(false);
+    setExpandedStudentId(null);
+  };
+
   return (
     <main className="shell">
-      <header className="topbar">
+      <header className={`topbar ${teacherPreview ? "previewTeacher" : ""}`}>
         <div className="brand">
           <img className="bolt" src="/geeks-lightning.svg" alt="" />
-          <span>GEEKS<span>Service</span></span>
+          {rolePreviewAvailable ? (
+            <button
+              type="button"
+              className="brandRoleSwitcher"
+              aria-label={`Тестовая роль: ${TEST_ROLE_LABELS[testRole]}. Переключить роль`}
+              onClick={cycleTestRole}
+            >
+              GEEKS <span key={testRole}>{TEST_ROLE_LABELS[testRole]}</span>
+            </button>
+          ) : (
+            <span>GEEKS <span>SERVICE</span></span>
+          )}
         </div>
         <div className="topActions">
           <ScheduleBadge label={schedule.currentLabel} />
-          {isAdmin && sessionToken && (
+          {effectiveAdmin && (
             <>
               <button
                 type="button"
@@ -714,15 +756,17 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
         <>
           {visibleScreen === "homeworkUpload" ? (
             <HomeworkUploadScreen
-              isAdmin={isAdmin && Boolean(sessionToken)}
+              isAdmin={effectiveAdmin}
               sessionToken={sessionToken}
+              previewRole={rolePreviewAvailable ? testRole : null}
             />
           ) : visibleScreen === "profile" ? (
             <ProfileScreen
               schedule={schedule}
               scheduleError={scheduleError}
-              isAdmin={isAdmin && Boolean(sessionToken)}
+              isAdmin={effectiveAdmin}
               sessionToken={sessionToken}
+              previewMode={teacherPreview}
               onScheduleChange={(next) => {
                 setSchedule(next);
                 setScheduleError(null);
@@ -730,15 +774,17 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
             />
           ) : (
             <>
-              {isAdmin && sessionToken && showAdminPanel && (
+              {effectiveAdmin && showAdminPanel && (
                 <AdminPanel
                   sessionToken={sessionToken}
+                  previewMode={teacherPreview}
+                  previewStudents={leaderboard}
                   onChange={applyAdminResponse}
                 />
               )}
               <Leaderboard
                 students={leaderboard}
-                isAdmin={isAdmin && Boolean(sessionToken)}
+                isAdmin={effectiveAdmin}
                 expandedStudentId={expandedStudentId}
                 bulkEditMode={bulkEditMode}
                 onBulkEditClose={() => {
@@ -746,6 +792,10 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
                 }}
                 onToggleStudent={toggleStudent}
                 onScoreChange={async (student, lessonNumber, score) => {
+                  if (teacherPreview) {
+                    setLeaderboardFast((current) => withScore(current, student.id, lessonNumber, score));
+                    return;
+                  }
                   if (!sessionToken) return;
                   const previous = leaderboardRef.current;
                   setLeaderboardFast((current) => withScore(current, student.id, lessonNumber, score));
@@ -761,7 +811,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
                   }
                 }}
                 onBulkStudentChange={async (changes) => {
-                  if (!sessionToken || changes.length === 0) return;
+                  if (changes.length === 0) return;
                   const previous = leaderboardRef.current;
                   setLeaderboardSmooth((current) => {
                     const patchesById = new Map(changes.map((change) => [change.student.id, change.patch]));
@@ -770,6 +820,8 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
                       return patch ? mergeStudentPatch(item, patch) : item;
                     }));
                   });
+                  if (teacherPreview) return;
+                  if (!sessionToken) return;
                   try {
                     let latest: AdminStudentsResponse | null = null;
                     for (const change of changes) {
@@ -818,12 +870,14 @@ function ProfileScreen({
   scheduleError,
   isAdmin,
   sessionToken,
+  previewMode,
   onScheduleChange,
 }: {
   schedule: ScheduleResponse;
   scheduleError: string | null;
   isAdmin: boolean;
   sessionToken: string | null;
+  previewMode: boolean;
   onScheduleChange: (next: ScheduleResponse) => void;
 }) {
   const [monthIndex, setMonthIndex] = useState(() => initialScheduleMonthIndex(schedule));
@@ -916,10 +970,11 @@ function ProfileScreen({
         {scheduleError && <p className="calendarNote error">{scheduleError}</p>}
       </div>
 
-      {editing && isAdmin && sessionToken && (
+      {editing && isAdmin && (sessionToken || previewMode) && (
         <ScheduleEditor
           schedule={schedule}
           sessionToken={sessionToken}
+          previewMode={previewMode}
           onSaved={(next) => {
             onScheduleChange(next);
             setEditing(false);
@@ -981,11 +1036,13 @@ function CalendarMonth({
 function ScheduleEditor({
   schedule,
   sessionToken,
+  previewMode,
   onSaved,
   onCancel,
 }: {
   schedule: ScheduleResponse;
-  sessionToken: string;
+  sessionToken: string | null;
+  previewMode: boolean;
   onSaved: (next: ScheduleResponse) => void;
   onCancel: () => void;
 }) {
@@ -1002,6 +1059,12 @@ function ScheduleEditor({
         scheduledAt: datetimeLocalToBishkekIso(draft.localValue),
         courseMonth: draft.courseMonth,
       }));
+      if (previewMode) {
+        hapticNotice("success");
+        onSaved(buildScheduleResponse(lessons));
+        return;
+      }
+      if (!sessionToken) throw new Error("Нет сессии преподавателя");
       const response = await api<ScheduleResponse>("/api/admin/schedule", {
         method: "PUT",
         body: JSON.stringify({ lessons }),
@@ -1083,9 +1146,11 @@ function calendarCells(year: number, month: number): Array<number | null> {
 function HomeworkUploadScreen({
   isAdmin,
   sessionToken,
+  previewRole,
 }: {
   isAdmin: boolean;
   sessionToken: string | null;
+  previewRole: TestRole | null;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const homeworkInputRef = useRef<HTMLInputElement | null>(null);
@@ -1117,12 +1182,21 @@ function HomeworkUploadScreen({
   };
 
   const submitUpload = async () => {
-    if (!isAdmin || !sessionToken || !file || !title.trim() || busy) return;
+    if (!isAdmin || !file || !title.trim() || busy) return;
     setUploadError(null);
     setResultUrl(null);
     setProgress(0);
     setPhase("creating");
     try {
+      if (!sessionToken && previewRole === "teachers") {
+        await sleep(280);
+        setProgress(100);
+        setResultUrl("#test-video");
+        setPhase("done");
+        hapticNotice("success");
+        return;
+      }
+      if (!sessionToken) throw new Error("Нет сессии преподавателя");
       const session = await api<YouTubeUploadSessionResponse>("/api/admin/youtube/upload-session", {
         method: "POST",
         body: JSON.stringify({
@@ -1160,7 +1234,7 @@ function HomeworkUploadScreen({
   };
 
   const submitHomework = async () => {
-    if (!sessionToken || homeworkBusy || !hasHomeworkContent) return;
+    if (homeworkBusy || !hasHomeworkContent) return;
     if (!homeworkLinksAreValid(homeworkLinks)) {
       setHomeworkPhase("error");
       setHomeworkMessage("В ссылках оставь URL, сайт или @username. Лучше по одной строке.");
@@ -1170,6 +1244,17 @@ function HomeworkUploadScreen({
     setHomeworkPhase("submitting");
     setHomeworkMessage(null);
     try {
+      if (!sessionToken && previewRole === "students") {
+        await sleep(220);
+        setHomeworkLinks("");
+        setHomeworkDescription("");
+        setHomeworkFile(null);
+        setHomeworkPhase("done");
+        setHomeworkMessage("ДЗ принято в тестовом режиме");
+        hapticNotice("success");
+        return;
+      }
+      if (!sessionToken) throw new Error("Нет сессии ученика");
       const form = new FormData();
       form.set("links", homeworkLinks.trim());
       form.set("description", homeworkDescription.trim());
@@ -1189,7 +1274,7 @@ function HomeworkUploadScreen({
     }
   };
 
-  if (!sessionToken) return null;
+  if (!sessionToken && !previewRole) return null;
 
   if (!isAdmin) {
     return (
@@ -1334,7 +1419,11 @@ function HomeworkUploadScreen({
         {uploadError && <p className="uploadMessage error">{uploadError}</p>}
         {resultUrl && (
           <p className="uploadMessage success">
-            Видео готово: <a href={resultUrl} target="_blank" rel="noreferrer">{resultUrl}</a>
+            {resultUrl === "#test-video" ? (
+              "Видео подготовлено в тестовом режиме"
+            ) : (
+              <>Видео готово: <a href={resultUrl} target="_blank" rel="noreferrer">{resultUrl}</a></>
+            )}
           </p>
         )}
 
@@ -1353,9 +1442,13 @@ function HomeworkUploadScreen({
 
 function AdminPanel({
   sessionToken,
+  previewMode,
+  previewStudents,
   onChange,
 }: {
-  sessionToken: string;
+  sessionToken: string | null;
+  previewMode: boolean;
+  previewStudents: StudentView[];
   onChange: (next: AdminStudentsResponse) => void;
 }) {
   const [displayName, setDisplayName] = useState("");
@@ -1366,6 +1459,32 @@ function AdminPanel({
     if (!displayName.trim()) return;
     setBusy(true);
     try {
+      if (previewMode) {
+        const telegramValue = telegram.trim();
+        const telegramUserId = isTelegramId(telegramValue) ? telegramValue : null;
+        const telegramUsername = telegramUserId ? null : normalizeUsernameInput(telegramValue);
+        const student: StudentView = {
+          id: `preview-${Date.now()}`,
+          telegramUserId,
+          telegramUsername,
+          displayName: displayName.trim(),
+          avatarUrl: publicTelegramAvatarUrl(telegramUsername),
+          status: "active",
+          scores: Array.from({ length: 12 }, (_, index) => ({ lessonNumber: index + 1, score: null, updatedAt: null })),
+          completedLessons: 0,
+          totalScore: 0,
+          lastScoredAt: null,
+          place: null,
+          pointsBehindLeader: 0,
+          isCurrentUser: false,
+        };
+        onChange({ students: rankVisibleStudents([...previewStudents, student]), pendingStudents: [] });
+        setDisplayName("");
+        setTelegram("");
+        hapticNotice("success");
+        return;
+      }
+      if (!sessionToken) throw new Error("Нет сессии преподавателя");
       const response = await api<AdminStudentsResponse>("/api/admin/students", {
         method: "POST",
         body: JSON.stringify({ displayName, telegram }),
