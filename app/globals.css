@@ -964,9 +964,25 @@ button:disabled {
 }
 
 .navIconHomework {
-  font-size: 19px;
+  display: grid;
+  place-items: center;
+  gap: 0;
+  font-size: 18px;
   font-weight: 950;
   letter-spacing: -0.08em;
+  line-height: 1;
+}
+
+.navIconHomework span {
+  display: block;
+  margin-bottom: -3px;
+  font-size: 20px;
+  line-height: 0.8;
+}
+
+.navIconHomework strong {
+  display: block;
+  font-size: 18px;
   line-height: 1;
 }
 
