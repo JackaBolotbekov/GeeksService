@@ -357,7 +357,7 @@ button:disabled {
   gap: 10px;
   width: 100%;
   min-width: 0;
-  padding: 0 3px 8px 0;
+  padding: 0 3px 88px 0;
   overflow: visible;
   user-select: none;
   -webkit-user-select: none;
@@ -458,6 +458,53 @@ button:disabled {
   background: linear-gradient(135deg, #7c3aed, #f43f5e);
   color: white;
   font-weight: 950;
+}
+
+.avatarWrap {
+  position: relative;
+  width: clamp(48px, 12vw, 58px);
+  height: clamp(48px, 12vw, 58px);
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+}
+
+.avatarWrap .avatar {
+  width: 100%;
+  height: 100%;
+}
+
+.podiumMedal {
+  position: absolute;
+  top: -7px;
+  right: -8px;
+  width: clamp(23px, 5.9vw, 29px);
+  height: clamp(23px, 5.9vw, 29px);
+  display: grid;
+  place-items: center;
+  border: 2px solid #11131b;
+  border-radius: 999px;
+  color: #11131b;
+  font-size: clamp(12px, 3.2vw, 15px);
+  font-weight: 950;
+  line-height: 1;
+  box-shadow:
+    inset 0 -2px 0 rgba(17, 19, 27, 0.12),
+    0 2px 0 #11131b,
+    0 5px 10px rgba(0, 0, 0, 0.18);
+}
+
+.podiumMedal.gold {
+  background: linear-gradient(180deg, #fff4a8 0%, var(--yellow) 58%, #eebd00 100%);
+}
+
+.podiumMedal.silver {
+  background: linear-gradient(180deg, #ffffff 0%, #e4e8ef 55%, #aeb6c4 100%);
+}
+
+.podiumMedal.bronze {
+  background: linear-gradient(180deg, #ffd6a7 0%, #c97938 58%, #8f4d24 100%);
+  color: #17110c;
 }
 
 .studentInfo {
@@ -818,6 +865,139 @@ button:disabled {
 
 .scoreClear {
   background: #ffb3b3;
+}
+
+.bottomNav {
+  position: fixed;
+  left: 50%;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  z-index: 60;
+  width: min(360px, calc(100dvw - 24px));
+  height: 58px;
+  display: grid;
+  grid-template-columns: 1fr 76px 1fr;
+  align-items: end;
+  gap: 10px;
+  padding: 7px 10px;
+  border: 2px solid rgba(17, 19, 27, 0.96);
+  border-radius: 24px 24px 18px 18px;
+  background: rgba(17, 19, 27, 0.90);
+  box-shadow:
+    0 -10px 30px rgba(0, 0, 0, 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+  transform: translateX(-50%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.bottomNavButton {
+  min-width: 0;
+  width: 100%;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #11131b;
+  border-radius: 15px;
+  background: #f7f3ea;
+  color: #11131b;
+  box-shadow: 0 3px 0 rgba(17, 19, 27, 0.92);
+  pointer-events: auto;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    background 160ms ease,
+    filter 160ms ease;
+}
+
+.bottomNavButton.active,
+.bottomNavPrimary {
+  background: linear-gradient(180deg, #fff078 0%, var(--yellow) 62%, #f2c900 100%);
+}
+
+.bottomNavPrimary {
+  width: 66px;
+  height: 66px;
+  justify-self: center;
+  border-radius: 999px;
+  transform: translateY(-15px);
+  box-shadow:
+    inset 0 -3px 0 rgba(17, 19, 27, 0.14),
+    0 4px 0 rgba(17, 19, 27, 0.92),
+    0 10px 18px rgba(0, 0, 0, 0.20);
+}
+
+.bottomNavButton:active {
+  transform: translateY(2px) scale(0.98);
+  box-shadow: 0 1px 0 rgba(17, 19, 27, 0.92);
+}
+
+.bottomNavPrimary:active {
+  transform: translateY(-12px) scale(0.98);
+}
+
+.navIconRank {
+  height: 24px;
+  display: grid;
+  grid-template-columns: repeat(3, 6px);
+  align-items: end;
+  gap: 4px;
+}
+
+.navIconRank i {
+  display: block;
+  width: 6px;
+  border-radius: 6px 6px 3px 3px;
+  background: #11131b;
+}
+
+.navIconRank i:nth-child(1) {
+  height: 12px;
+}
+
+.navIconRank i:nth-child(2) {
+  height: 19px;
+}
+
+.navIconRank i:nth-child(3) {
+  height: 15px;
+}
+
+.navIconHomework {
+  font-size: 19px;
+  font-weight: 950;
+  letter-spacing: -0.08em;
+  line-height: 1;
+}
+
+.navIconProfile {
+  position: relative;
+  width: 25px;
+  height: 25px;
+  display: block;
+}
+
+.navIconProfile::before,
+.navIconProfile::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  border: 3px solid #11131b;
+  transform: translateX(-50%);
+}
+
+.navIconProfile::before {
+  top: 1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.navIconProfile::after {
+  bottom: 1px;
+  width: 18px;
+  height: 10px;
+  border-radius: 12px 12px 7px 7px;
 }
 
 ::view-transition-old(root),

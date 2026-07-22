@@ -468,6 +468,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
               }
             }}
           />
+          <BottomNav />
         </>
       )}
     </main>
@@ -705,7 +706,7 @@ function Leaderboard({
               onKeyDown={(event) => handleStudentKeyDown(event, student)}
             >
               <span className="place">{student.place}</span>
-              <Avatar student={student} />
+              <Avatar student={student} showMedal />
               <div className="studentInfo">
                 <strong>{student.displayName}</strong>
                 <span>{homeworkLabel(student.completedLessons)}</span>
@@ -791,7 +792,7 @@ function Leaderboard({
   );
 }
 
-function Avatar({ student }: { student: StudentView }) {
+function Avatar({ student, showMedal = false }: { student: StudentView; showMedal?: boolean }) {
   const [failed, setFailed] = useState(false);
   const initial = student.displayName
     .split(/\s+/)
@@ -799,11 +800,45 @@ function Avatar({ student }: { student: StudentView }) {
     .at(0)
     ?.at(0)
     ?.toUpperCase();
+  const medal = showMedal ? podiumMedal(student.place) : null;
+  const avatar = shouldUseAvatar(student) && !failed
+    ? <img className="avatar" src={student.avatarUrl} alt="" onError={() => setFailed(true)} />
+    : <span className="avatar fallback">{initial || "G"}</span>;
 
-  if (shouldUseAvatar(student) && !failed) {
-    return <img className="avatar" src={student.avatarUrl} alt="" onError={() => setFailed(true)} />;
-  }
-  return <span className="avatar fallback">{initial || "G"}</span>;
+  return (
+    <span className={`avatarWrap ${medal ? "withMedal" : ""}`}>
+      {avatar}
+      {medal && (
+        <span className={`podiumMedal ${medal.kind}`} aria-label={medal.label} title={medal.label}>
+          {medal.place}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function podiumMedal(place: number) {
+  if (place === 1) return { place, kind: "gold", label: "1 место" };
+  if (place === 2) return { place, kind: "silver", label: "2 место" };
+  if (place === 3) return { place, kind: "bronze", label: "3 место" };
+  return null;
+}
+
+function BottomNav() {
+  const handleNavTap = () => hapticSelection();
+  return (
+    <nav className="bottomNav" aria-label="Geeks Service">
+      <button type="button" className="bottomNavButton active" aria-label="Рейтинг" aria-current="page" onClick={handleNavTap}>
+        <span className="navIcon navIconRank" aria-hidden="true"><i /><i /><i /></span>
+      </button>
+      <button type="button" className="bottomNavButton bottomNavPrimary" aria-label="Отправить ДЗ" onClick={handleNavTap}>
+        <span className="navIcon navIconHomework" aria-hidden="true">ДЗ</span>
+      </button>
+      <button type="button" className="bottomNavButton" aria-label="Профиль" onClick={handleNavTap}>
+        <span className="navIcon navIconProfile" aria-hidden="true" />
+      </button>
+    </nav>
+  );
 }
 
 const knownMissingTelegramAvatars = new Set(["akyl1230", "chinaronaldo"]);
