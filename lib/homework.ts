@@ -58,7 +58,7 @@ async function initializeHomeworkDatabase(): Promise<void> {
 export async function createHomeworkSubmission(input: HomeworkSubmissionInput): Promise<HomeworkSubmission> {
   await ensureHomeworkDatabase();
 
-  const links = cleanText(input.links, "Ссылки");
+  const links = cleanLinks(input.links);
   const description = cleanText(input.description, "Описание");
   const extra = cleanText(input.extra, "Дополнение");
   const file = input.file && input.file.size > 0 ? input.file : null;
@@ -109,6 +109,25 @@ function cleanText(value: string, label: string): string {
     throw new Error(`${label}: максимум ${MAX_TEXT_LENGTH} символов`);
   }
   return cleaned;
+}
+
+function cleanLinks(value: string): string {
+  const cleaned = cleanText(value, "Ссылки");
+  if (!cleaned) return "";
+  const invalid = cleaned
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .some((token) => !isLinkToken(token));
+  if (invalid) {
+    throw new Error("В ссылках оставь URL, сайт или @username. Лучше по одной строке.");
+  }
+  return cleaned;
+}
+
+function isLinkToken(token: string): boolean {
+  return /^(https?:\/\/|www\.)\S+$/i.test(token)
+    || /^@[a-z0-9_]{3,32}$/i.test(token)
+    || /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/\S*)?$/i.test(token);
 }
 
 function cleanStudentName(value: string): string {

@@ -939,7 +939,10 @@ button:disabled {
 }
 
 .homeworkCard {
+  display: grid;
   gap: 10px;
+  width: 100%;
+  min-width: 0;
   padding: 0 3px;
   border: 0;
   border-radius: 0;
@@ -947,16 +950,24 @@ button:disabled {
   box-shadow: none;
 }
 
+.homeworkCard .uploadField {
+  gap: 0;
+}
+
 .homeworkCard .uploadField textarea {
   min-height: clamp(96px, 16svh, 140px);
 }
 
-.homeworkCard .compactTextarea {
-  min-height: 76px;
+.homeworkCard .homeworkLinksInput {
+  min-height: 70px;
 }
 
 .homeworkDrop {
   min-height: clamp(118px, 19svh, 156px);
+}
+
+.homeworkSubmitActions {
+  grid-template-columns: 1fr;
 }
 
 .profileScreen {

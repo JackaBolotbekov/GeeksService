@@ -69,6 +69,7 @@ type UploadChunkInput = {
 
 const VIDEO_CHUNK_SIZE = 16 * 1024 * 1024;
 const LEADERBOARD_CACHE_KEY = "geeks-service:leaderboard:v1";
+const LEADERBOARD_LIVE_INTERVAL_MS = 1400;
 
 async function api<T>(path: string, options: RequestInit = {}, sessionToken?: string): Promise<T> {
   const response = await fetch(path, {
@@ -138,6 +139,38 @@ function writeCachedLeaderboard(students: StudentView[]) {
   } catch {
     // Best-effort cache only; the server remains the source of truth.
   }
+}
+
+function leaderboardSignature(students: StudentView[]): string {
+  return students.map((student) => [
+    student.id,
+    student.place,
+    student.displayName,
+    student.telegramUsername ?? "",
+    student.telegramUserId ?? "",
+    student.avatarUrl ?? "",
+    student.completedLessons,
+    student.totalScore,
+    student.lastScoredAt ?? "",
+    student.scores.map((cell) => `${cell.lessonNumber}:${cell.score ?? "-"}:${cell.updatedAt ?? ""}`).join(","),
+  ].join("~")).join("|");
+}
+
+function isSameLeaderboard(left: StudentView[], right: StudentView[]): boolean {
+  return leaderboardSignature(left) === leaderboardSignature(right);
+}
+
+function homeworkLinksAreValid(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return true;
+  return trimmed
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .every((token) =>
+      /^(https?:\/\/|www\.)\S+$/i.test(token)
+      || /^@[a-z0-9_]{3,32}$/i.test(token)
+      || /^(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/\S*)?$/i.test(token),
+    );
 }
 
 function formatBytes(bytes: number): string {
@@ -528,6 +561,57 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (state !== "ready" || activeScreen !== "leaderboard") return;
+    let cancelled = false;
+    let inFlight = false;
+    const applyLiveLeaderboard = (students: StudentView[]) => {
+      const ranked = rankVisibleStudents(students);
+      if (!isSameLeaderboard(leaderboardRef.current, ranked)) {
+        setLeaderboard(() => {
+          writeCachedLeaderboard(ranked);
+          return ranked;
+        });
+      }
+    };
+    const refreshLiveLeaderboard = async () => {
+      if (isAdmin && sessionToken) {
+        const response = await api<AdminStudentsResponse>("/api/admin/students", {}, sessionToken);
+        applyLiveLeaderboard(response.students);
+        return;
+      }
+      const response = await api<LeaderboardResponse>("/api/leaderboard");
+      applyLiveLeaderboard(response.students);
+    };
+    const tick = async () => {
+      if (cancelled || inFlight || document.visibilityState === "hidden") return;
+      inFlight = true;
+      try {
+        await refreshLiveLeaderboard();
+      } catch {
+        // Keep the visible leaderboard stable; the next tick will retry.
+      } finally {
+        inFlight = false;
+      }
+    };
+    const delayed = window.setTimeout(() => {
+      void tick();
+    }, 250);
+    const timer = window.setInterval(() => {
+      void tick();
+    }, LEADERBOARD_LIVE_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(delayed);
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [activeScreen, isAdmin, sessionToken, state]);
 
   useEffect(() => {
     const run = async () => {
@@ -959,12 +1043,11 @@ function HomeworkUploadScreen({
   const [homeworkFile, setHomeworkFile] = useState<File | null>(null);
   const [homeworkLinks, setHomeworkLinks] = useState("");
   const [homeworkDescription, setHomeworkDescription] = useState("");
-  const [homeworkExtra, setHomeworkExtra] = useState("");
   const [homeworkDragActive, setHomeworkDragActive] = useState(false);
   const [homeworkPhase, setHomeworkPhase] = useState<HomeworkSubmitPhase>("idle");
   const [homeworkMessage, setHomeworkMessage] = useState<string | null>(null);
   const homeworkBusy = homeworkPhase === "submitting";
-  const hasHomeworkContent = Boolean(homeworkLinks.trim() || homeworkDescription.trim() || homeworkExtra.trim() || homeworkFile);
+  const hasHomeworkContent = Boolean(homeworkLinks.trim() || homeworkDescription.trim() || homeworkFile);
 
   const selectFile = (nextFile: File | null) => {
     if (!nextFile) return;
@@ -1020,18 +1103,23 @@ function HomeworkUploadScreen({
 
   const submitHomework = async () => {
     if (!sessionToken || homeworkBusy || !hasHomeworkContent) return;
+    if (!homeworkLinksAreValid(homeworkLinks)) {
+      setHomeworkPhase("error");
+      setHomeworkMessage("В ссылках оставь URL, сайт или @username. Лучше по одной строке.");
+      hapticNotice("warning");
+      return;
+    }
     setHomeworkPhase("submitting");
     setHomeworkMessage(null);
     try {
       const form = new FormData();
       form.set("links", homeworkLinks.trim());
       form.set("description", homeworkDescription.trim());
-      form.set("extra", homeworkExtra.trim());
+      form.set("extra", "");
       if (homeworkFile) form.set("file", homeworkFile);
       const result = await apiForm<HomeworkSubmitResponse>("/api/homework/submit", form, sessionToken);
       setHomeworkLinks("");
       setHomeworkDescription("");
-      setHomeworkExtra("");
       setHomeworkFile(null);
       setHomeworkPhase("done");
       setHomeworkMessage(result.fileName ? `ДЗ отправлено: ${result.fileName}` : "ДЗ отправлено");
@@ -1046,7 +1134,7 @@ function HomeworkUploadScreen({
   if (!isAdmin || !sessionToken) {
     return (
       <section className="uploadScreen">
-        <form className="uploadCard homeworkCard" onSubmit={(event) => {
+        <form className="homeworkCard" onSubmit={(event) => {
           event.preventDefault();
           void submitHomework();
         }}>
@@ -1057,36 +1145,25 @@ function HomeworkUploadScreen({
           )}
 
           <label className="uploadField">
-            <span>Ссылки</span>
-            <input
+            <textarea
+              className="compactTextarea homeworkLinksInput"
               value={homeworkLinks}
               disabled={homeworkBusy}
               maxLength={5000}
-              placeholder="GitHub, сайт, видео или другая ссылка"
+              aria-label="Ссылки на домашнее задание"
+              placeholder="Ссылки: github.com/..., @Sites, @telegram_bot"
               onChange={(event) => setHomeworkLinks(event.target.value)}
             />
           </label>
 
           <label className="uploadField">
-            <span>Описание</span>
             <textarea
               value={homeworkDescription}
               disabled={homeworkBusy}
               maxLength={5000}
-              placeholder="Что именно ты сдаёшь и что нужно проверить"
+              aria-label="Описание домашнего задания"
+              placeholder="Что именно ты сдаёшь и что нужно проверить. Можешь дополнить от себя.."
               onChange={(event) => setHomeworkDescription(event.target.value)}
-            />
-          </label>
-
-          <label className="uploadField">
-            <span>Дополнить от себя</span>
-            <textarea
-              className="compactTextarea"
-              value={homeworkExtra}
-              disabled={homeworkBusy}
-              maxLength={5000}
-              placeholder="Комменты, вопросы, что не получилось"
-              onChange={(event) => setHomeworkExtra(event.target.value)}
             />
           </label>
 
@@ -1110,20 +1187,18 @@ function HomeworkUploadScreen({
             <input
               ref={homeworkInputRef}
               type="file"
+              accept=".md,.markdown,.zip,.pdf,.txt,.doc,.docx,image/*,video/*"
               disabled={homeworkBusy}
               onChange={(event) => selectHomeworkFile(event.target.files?.item(0) ?? null)}
             />
             <span className="dropIcon">↑</span>
-            <strong>{homeworkFile ? homeworkFile.name : "Файл домашки"}</strong>
-            <small>{homeworkFile ? formatBytes(homeworkFile.size) : "нажми или перетащи markdown, pdf, zip, фото, видео"}</small>
+            <strong>{homeworkFile ? homeworkFile.name : "нажми или перетащи"}</strong>
+            <small>{homeworkFile ? formatBytes(homeworkFile.size) : ".md .zip"}</small>
           </label>
 
           {homeworkMessage && <p className={`uploadMessage ${homeworkPhase === "error" ? "error" : "success"}`}>{homeworkMessage}</p>}
 
-          <div className="uploadActions">
-            <button type="button" className="uploadSecondary" disabled={homeworkBusy} onClick={() => homeworkInputRef.current?.click()}>
-              Выбрать файл
-            </button>
+          <div className="uploadActions homeworkSubmitActions">
             <button type="submit" className="uploadPrimary" disabled={homeworkBusy || !sessionToken || !hasHomeworkContent}>
               {homeworkBusy ? "Отправляю..." : "Отправить"}
             </button>
