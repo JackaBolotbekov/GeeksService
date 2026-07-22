@@ -193,6 +193,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.calendarCard\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\)/s);
   assert.match(css, /\.calendarHeader\s*{[^}]*grid-template-columns:\s*38px minmax\(0,\s*1fr\) 38px/s);
   assert.match(css, /\.calendarHeader button\s*{[^}]*width:\s*38px/s);
+  assert.match(css, /\.calendarMonthPane\s*{[^}]*height:\s*100%/s);
+  assert.match(css, /\.calendarGrid\s*{[^}]*height:\s*100%/s);
   assert.match(css, /\.calendarCard\s*{[^}]*background:\s*var\(--card\)/s);
   assert.match(css, /\.calendarCard\s*{[^}]*touch-action:\s*pan-y/s);
   assert.match(css, /\.calendarGrid\s*{[^}]*grid-template-columns:\s*repeat\(7,\s*minmax\(0,\s*1fr\)\)/s);

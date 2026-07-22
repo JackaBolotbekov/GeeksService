@@ -1089,6 +1089,7 @@ button:disabled {
 
 .calendarMonthPane {
   min-height: 0;
+  height: 100%;
 }
 
 .calendarMonthPane.next {
@@ -1101,6 +1102,7 @@ button:disabled {
 
 .calendarGrid {
   min-height: 0;
+  height: 100%;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   grid-template-rows: 22px repeat(6, minmax(0, 1fr));
