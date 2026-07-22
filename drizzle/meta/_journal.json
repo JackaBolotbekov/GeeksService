@@ -15,6 +15,13 @@
       "when": 1784736000755,
       "tag": "0001_flaky_zarek",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784744582060,
+      "tag": "0002_yummy_warlock",
+      "breakpoints": true
     }
   ]
 }

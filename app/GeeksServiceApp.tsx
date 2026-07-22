@@ -3,7 +3,8 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from "react";
-import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, MeResponse, StudentView } from "@/lib/types";
+import { bishkekDateKey, buildScheduleResponse, DEFAULT_LESSON_SCHEDULE, localDateParts } from "@/lib/schedule";
+import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, MeResponse, ScheduleResponse, StudentView } from "@/lib/types";
 
 declare global {
   interface Window {
@@ -14,7 +15,7 @@ declare global {
 }
 
 type LoadState = "loading" | "ready" | "error";
-type ActiveScreen = "leaderboard" | "homeworkUpload";
+type ActiveScreen = "leaderboard" | "homeworkUpload" | "profile";
 type UploadPhase = "idle" | "creating" | "uploading" | "done" | "error";
 type HomeworkSubmitPhase = "idle" | "submitting" | "done" | "error";
 
@@ -425,22 +426,10 @@ function mergeStudentPatch(student: StudentView, patch: StudentPatch): StudentVi
   };
 }
 
-const GROUP_BADGES = ["VibeCoding-1", "6 урок >"] as const;
-
-function RotatingGroupBadge() {
-  const [badgeIndex, setBadgeIndex] = useState(0);
-  const label = GROUP_BADGES[badgeIndex];
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setBadgeIndex((current) => (current + 1) % GROUP_BADGES.length);
-    }, 3200);
-    return () => window.clearInterval(timer);
-  }, []);
-
+function ScheduleBadge({ label }: { label: string }) {
   return (
-    <span className="groupBadge" aria-label="Группа и текущий урок">
-      <span key={label} className="groupBadgeText">{label}</span>
+    <span className="groupBadge" aria-label="Текущий учебный прогресс">
+      <span className="groupBadgeText">{label}</span>
     </span>
   );
 }
@@ -458,6 +447,8 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
     if (rankedInitial.length > 0) return rankedInitial;
     return readCachedLeaderboard() ?? rankedInitial;
   });
+  const [schedule, setSchedule] = useState<ScheduleResponse>(() => buildScheduleResponse(DEFAULT_LESSON_SCHEDULE));
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [bulkEditMode, setBulkEditMode] = useState(false);
@@ -498,6 +489,16 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
     setLeaderboardSmooth(rankVisibleStudents(response.students));
   };
 
+  const refreshSchedule = async () => {
+    try {
+      const response = await api<ScheduleResponse>("/api/schedule");
+      setSchedule(response);
+      setScheduleError(null);
+    } catch (caught) {
+      setScheduleError(caught instanceof Error ? caught.message : "Не удалось загрузить календарь");
+    }
+  };
+
   const toggleStudent = (studentId: string) => {
     hapticSelection();
     setExpandedStudentId((current) => current === studentId ? null : studentId);
@@ -514,6 +515,19 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
       body: JSON.stringify(body),
     }, token);
   };
+
+  useEffect(() => {
+    const initialRefresh = window.setTimeout(() => {
+      void refreshSchedule();
+    }, 0);
+    const timer = window.setInterval(() => {
+      setSchedule((current) => buildScheduleResponse(current.lessons.length > 0 ? current.lessons : DEFAULT_LESSON_SCHEDULE));
+    }, 30000);
+    return () => {
+      window.clearTimeout(initialRefresh);
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     const run = async () => {
@@ -554,7 +568,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
           <span>GEEKS<span>Service</span></span>
         </div>
         <div className="topActions">
-          <RotatingGroupBadge />
+          <ScheduleBadge label={schedule.currentLabel} />
           {isAdmin && sessionToken && (
             <>
               <button
@@ -600,6 +614,17 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
             <HomeworkUploadScreen
               isAdmin={isAdmin && Boolean(sessionToken)}
               sessionToken={sessionToken}
+            />
+          ) : activeScreen === "profile" ? (
+            <ProfileScreen
+              schedule={schedule}
+              scheduleError={scheduleError}
+              isAdmin={isAdmin && Boolean(sessionToken)}
+              sessionToken={sessionToken}
+              onScheduleChange={(next) => {
+                setSchedule(next);
+                setScheduleError(null);
+              }}
             />
           ) : (
             <>
@@ -670,11 +695,247 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
               setBulkEditMode(false);
               setExpandedStudentId(null);
             }}
+            onProfile={() => {
+              hapticSelection();
+              setActiveScreen("profile");
+              setShowAdminPanel(false);
+              setBulkEditMode(false);
+              setExpandedStudentId(null);
+            }}
           />
         </>
       )}
     </main>
   );
+}
+
+function ProfileScreen({
+  schedule,
+  scheduleError,
+  isAdmin,
+  sessionToken,
+  onScheduleChange,
+}: {
+  schedule: ScheduleResponse;
+  scheduleError: string | null;
+  isAdmin: boolean;
+  sessionToken: string | null;
+  onScheduleChange: (next: ScheduleResponse) => void;
+}) {
+  const [monthIndex, setMonthIndex] = useState(() => initialScheduleMonthIndex(schedule));
+  const [editing, setEditing] = useState(false);
+  const months = schedule.months;
+  const safeMonthIndex = Math.min(Math.max(monthIndex, 0), Math.max(0, months.length - 1));
+  const currentMonth = months[safeMonthIndex] ?? months[0] ?? null;
+
+  return (
+    <section className="profileScreen">
+      <div className="calendarHero">
+        <div className="calendarTopline">
+          <span>{schedule.currentLabel}</span>
+          {isAdmin && (
+            <button
+              type="button"
+              className="calendarEditButton"
+              aria-expanded={editing}
+              aria-label={editing ? "Закрыть настройку календаря" : "Настроить календарь"}
+              onClick={() => {
+                hapticImpact("light");
+                setEditing((current) => !current);
+              }}
+            >
+              ✎
+            </button>
+          )}
+        </div>
+
+        {currentMonth && (
+          <div className="calendarCard" aria-label="Календарь занятий">
+            <div className="calendarHeader">
+              <button
+                type="button"
+                disabled={safeMonthIndex <= 0}
+                onClick={() => setMonthIndex((current) => Math.max(0, current - 1))}
+                aria-label="Предыдущий учебный месяц"
+              >
+                ←
+              </button>
+              <strong>{currentMonth.label}</strong>
+              <button
+                type="button"
+                disabled={safeMonthIndex >= months.length - 1}
+                onClick={() => setMonthIndex((current) => Math.min(months.length - 1, current + 1))}
+                aria-label="Следующий учебный месяц"
+              >
+                →
+              </button>
+            </div>
+            <CalendarMonth month={currentMonth} lessons={schedule.lessons} />
+          </div>
+        )}
+
+        {scheduleError && <p className="calendarNote error">{scheduleError}</p>}
+        {!scheduleError && <p className="calendarNote">Жёлтые дни — занятия, которые уже прошли.</p>}
+      </div>
+
+      {editing && isAdmin && sessionToken && (
+        <ScheduleEditor
+          schedule={schedule}
+          sessionToken={sessionToken}
+          onSaved={(next) => {
+            onScheduleChange(next);
+            setEditing(false);
+            setMonthIndex(initialScheduleMonthIndex(next));
+          }}
+          onCancel={() => setEditing(false)}
+        />
+      )}
+    </section>
+  );
+}
+
+function CalendarMonth({
+  month,
+  lessons,
+}: {
+  month: { key: string; year: number; month: number; label: string };
+  lessons: ScheduleResponse["lessons"];
+}) {
+  const today = bishkekDateKey();
+  const byDate = new Map<string, ScheduleResponse["lessons"]>();
+  for (const lesson of lessons) {
+    const key = lesson.scheduledAt.slice(0, 10);
+    const list = byDate.get(key) ?? [];
+    list.push(lesson);
+    byDate.set(key, list);
+  }
+  const cells = calendarCells(month.year, month.month);
+  return (
+    <div className="calendarGrid">
+      {["ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ", "ВС"].map((day) => (
+        <span className="calendarWeekday" key={day}>{day}</span>
+      ))}
+      {cells.map((cell, index) => {
+        if (!cell) return <span className="calendarDay empty" key={`empty-${index}`} />;
+        const key = `${month.key}-${String(cell).padStart(2, "0")}`;
+        const dayLessons = byDate.get(key) ?? [];
+        const mainLesson = dayLessons[0] ?? null;
+        const completed = dayLessons.some((lesson) => lesson.isCompleted);
+        return (
+          <span
+            className={`calendarDay ${mainLesson ? "lesson" : ""} ${completed ? "completed" : ""} ${key === today ? "today" : ""}`}
+            key={key}
+            title={mainLesson ? `Урок ${mainLesson.lessonNumber}` : undefined}
+          >
+            <strong>{cell}</strong>
+            {mainLesson && <small>{mainLesson.lessonNumber}</small>}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function ScheduleEditor({
+  schedule,
+  sessionToken,
+  onSaved,
+  onCancel,
+}: {
+  schedule: ScheduleResponse;
+  sessionToken: string;
+  onSaved: (next: ScheduleResponse) => void;
+  onCancel: () => void;
+}) {
+  const [drafts, setDrafts] = useState(() => schedule.lessons.map(scheduleDraft));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const lessons: LessonScheduleInput[] = drafts.map((draft) => ({
+        lessonNumber: draft.lessonNumber,
+        scheduledAt: datetimeLocalToBishkekIso(draft.localValue),
+        courseMonth: draft.courseMonth,
+      }));
+      const response = await api<ScheduleResponse>("/api/admin/schedule", {
+        method: "PUT",
+        body: JSON.stringify({ lessons }),
+      }, sessionToken);
+      hapticNotice("success");
+      onSaved(response);
+    } catch (caught) {
+      hapticNotice("error");
+      setError(caught instanceof Error ? caught.message : "Не удалось сохранить расписание");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="scheduleEditor">
+      <div className="scheduleEditorGrid">
+        {drafts.map((draft) => (
+          <label className="scheduleLessonField" key={draft.lessonNumber}>
+            <span>{draft.lessonNumber}</span>
+            <input
+              type="datetime-local"
+              value={draft.localValue}
+              disabled={saving}
+              onChange={(event) => {
+                const localValue = event.target.value;
+                setDrafts((current) => current.map((item) =>
+                  item.lessonNumber === draft.lessonNumber ? { ...item, localValue } : item,
+                ));
+              }}
+            />
+          </label>
+        ))}
+      </div>
+      {error && <p className="calendarNote error">{error}</p>}
+      <div className="scheduleActions">
+        <button type="button" className="uploadSecondary" disabled={saving} onClick={onCancel}>Отмена</button>
+        <button type="button" className="uploadPrimary" disabled={saving} onClick={() => void save()}>
+          {saving ? "Сохраняю..." : "Сохранить"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function scheduleDraft(lesson: ScheduleResponse["lessons"][number]) {
+  return {
+    lessonNumber: lesson.lessonNumber,
+    localValue: lesson.scheduledAt.slice(0, 16),
+    courseMonth: lesson.courseMonth,
+  };
+}
+
+function datetimeLocalToBishkekIso(value: string): string {
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) throw new Error("Дата и время урока обязательны");
+  return `${trimmed}:00+06:00`;
+}
+
+function initialScheduleMonthIndex(schedule: ScheduleResponse): number {
+  const completed = schedule.lessons.filter((lesson) => lesson.isCompleted);
+  const source = completed.at(-1) ?? schedule.lessons[0];
+  if (!source) return 0;
+  const parts = localDateParts(source.scheduledAt);
+  const key = `${parts.year}-${String(parts.month).padStart(2, "0")}`;
+  return Math.max(0, schedule.months.findIndex((month) => month.key === key));
+}
+
+function calendarCells(year: number, month: number): Array<number | null> {
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const firstDay = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  const leading = (firstDay + 6) % 7;
+  const cells: Array<number | null> = Array.from({ length: leading }, () => null);
+  for (let day = 1; day <= daysInMonth; day += 1) cells.push(day);
+  while (cells.length < 42) cells.push(null);
+  return cells;
 }
 
 function HomeworkUploadScreen({
@@ -913,7 +1174,7 @@ function HomeworkUploadScreen({
             value={title}
             disabled={busy}
             maxLength={100}
-            placeholder="Например: VibeCoding-1 · Урок 6"
+            placeholder="Например: Урок 6 · домашнее задание"
             onChange={(event) => setTitle(event.target.value)}
           />
         </label>
@@ -1317,10 +1578,12 @@ function BottomNav({
   activeScreen,
   onLeaderboard,
   onHomework,
+  onProfile,
 }: {
   activeScreen: ActiveScreen;
   onLeaderboard: () => void;
   onHomework: () => void;
+  onProfile: () => void;
 }) {
   return (
     <nav className="bottomNav" aria-label="Geeks Service">
@@ -1342,7 +1605,13 @@ function BottomNav({
       >
         <span className="navIcon navIconHomework" aria-hidden="true"><span className="uploadArrow" /><strong>ДЗ</strong></span>
       </button>
-      <button type="button" className="bottomNavButton" aria-label="Профиль" onClick={() => hapticSelection()}>
+      <button
+        type="button"
+        className={`bottomNavButton ${activeScreen === "profile" ? "active" : ""}`}
+        aria-label="Профиль"
+        aria-current={activeScreen === "profile" ? "page" : undefined}
+        onClick={onProfile}
+      >
         <span className="navIcon navIconProfile" aria-hidden="true" />
       </button>
     </nav>

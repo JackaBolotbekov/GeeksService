@@ -41,3 +41,13 @@ export const homeworkSubmissions = sqliteTable("homework_submissions", {
   fileSize: integer("file_size"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const lessonSchedule = sqliteTable("lesson_schedule", {
+  id: text("id").primaryKey(),
+  lessonNumber: integer("lesson_number").notNull(),
+  scheduledAt: text("scheduled_at").notNull(),
+  courseMonth: integer("course_month").notNull().default(1),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  lessonNumberIdx: uniqueIndex("lesson_schedule_lesson_number_unique").on(table.lessonNumber),
+}));

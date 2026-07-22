@@ -63,3 +63,32 @@ export interface HomeworkSubmitResponse {
   submissionId: string;
   fileName: string | null;
 }
+
+export interface LessonScheduleInput {
+  lessonNumber: number;
+  scheduledAt: string;
+  courseMonth?: number;
+}
+
+export interface LessonScheduleItem {
+  lessonNumber: number;
+  scheduledAt: string;
+  courseMonth: number;
+  updatedAt: string | null;
+  isCompleted: boolean;
+}
+
+export interface ScheduleMonth {
+  key: string;
+  year: number;
+  month: number;
+  label: string;
+}
+
+export interface ScheduleResponse {
+  lessons: LessonScheduleItem[];
+  months: ScheduleMonth[];
+  currentLabel: string;
+  completedLessonCount: number;
+  currentCourseMonth: number;
+}

@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
+import { buildScheduleResponse, DEFAULT_LESSON_SCHEDULE, normalizeLessonSchedule } from "./schedule";
 import { normalizeTelegramUsername, publicTelegramAvatar } from "./telegram";
-import { LESSON_COUNT, type AdminStudentsResponse, type ScoreCell, type StudentStatus, type StudentView } from "./types";
+import { LESSON_COUNT, type AdminStudentsResponse, type LessonScheduleInput, type ScheduleResponse, type ScoreCell, type StudentStatus, type StudentView } from "./types";
 
 type StudentRow = {
   id: string;
@@ -16,6 +17,13 @@ type ScoreRow = {
   lesson_number: number;
   score: number | null;
   created_at: string | null;
+  updated_at: string | null;
+};
+
+type LessonScheduleRow = {
+  lesson_number: number;
+  scheduled_at: string;
+  course_month: number;
   updated_at: string | null;
 };
 
@@ -92,7 +100,18 @@ async function initializeDatabase(): Promise<void> {
         FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
       )
     `),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS lesson_schedule (
+        id TEXT PRIMARY KEY,
+        lesson_number INTEGER NOT NULL UNIQUE,
+        scheduled_at TEXT NOT NULL,
+        course_month INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `),
   ]);
+
+  await seedLessonScheduleIfEmpty(db);
 
   const existing = await db.prepare("SELECT COUNT(*) AS count FROM students").first<{ count: number }>();
   if ((existing?.count ?? 0) > 0) return;
@@ -111,6 +130,17 @@ async function initializeDatabase(): Promise<void> {
       student.status ?? "active",
     ).run();
   }
+}
+
+async function seedLessonScheduleIfEmpty(db: D1Database): Promise<void> {
+  const existing = await db.prepare("SELECT COUNT(*) AS count FROM lesson_schedule").first<{ count: number }>();
+  if ((existing?.count ?? 0) > 0) return;
+  await db.batch(DEFAULT_LESSON_SCHEDULE.map((lesson) =>
+    db.prepare(`
+      INSERT INTO lesson_schedule (id, lesson_number, scheduled_at, course_month)
+      VALUES (?, ?, ?, ?)
+    `).bind(crypto.randomUUID(), lesson.lessonNumber, lesson.scheduledAt, lesson.courseMonth ?? 1),
+  ));
 }
 
 function statusOf(value: string): StudentStatus {
@@ -217,6 +247,44 @@ export async function listStudents(currentTelegramUserId: string | null = null):
   return withRanking(views)
     .filter((student) => student.status === "active")
     .sort((left, right) => (left.place ?? 999) - (right.place ?? 999) || left.displayName.localeCompare(right.displayName, "ru"));
+}
+
+export async function getLessonSchedule(now = new Date()): Promise<ScheduleResponse> {
+  await ensureDatabase();
+  const db = d1();
+  const result = await db.prepare(`
+    SELECT lesson_number, scheduled_at, course_month, updated_at
+    FROM lesson_schedule
+    ORDER BY lesson_number ASC
+  `).all<LessonScheduleRow>();
+  const rows = result.results ?? [];
+  const source = rows.length === LESSON_COUNT
+    ? rows.map((row) => ({
+      lessonNumber: row.lesson_number,
+      scheduledAt: row.scheduled_at,
+      courseMonth: row.course_month,
+      updatedAt: row.updated_at,
+    }))
+    : DEFAULT_LESSON_SCHEDULE;
+  return buildScheduleResponse(source, now);
+}
+
+export async function saveLessonSchedule(input: LessonScheduleInput[], now = new Date()): Promise<ScheduleResponse> {
+  await ensureDatabase();
+  const db = d1();
+  const lessons = normalizeLessonSchedule(input);
+  const updatedAt = new Date().toISOString();
+  await db.batch(lessons.map((lesson) =>
+    db.prepare(`
+      INSERT INTO lesson_schedule (id, lesson_number, scheduled_at, course_month, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(lesson_number)
+      DO UPDATE SET scheduled_at = excluded.scheduled_at,
+                    course_month = excluded.course_month,
+                    updated_at = excluded.updated_at
+    `).bind(crypto.randomUUID(), lesson.lessonNumber, lesson.scheduledAt, lesson.courseMonth, updatedAt),
+  ));
+  return getLessonSchedule(now);
 }
 
 export async function adminStudentsResponse(currentTelegramUserId: string | null): Promise<AdminStudentsResponse> {

@@ -35,10 +35,19 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /pointsBehindLeader === 0 \? "TOP"/);
   assert.doesNotMatch(app, /<h1>/);
   assert.doesNotMatch(app, /heroStats/);
-  assert.match(app, /VibeCoding-1/);
-  assert.match(app, /6 урок >/);
-  assert.match(app, /RotatingGroupBadge/);
-  assert.match(app, /3200/);
+  assert.match(app, /ScheduleBadge/);
+  assert.match(app, /schedule\.currentLabel/);
+  assert.match(app, /activeScreen === "profile"/);
+  assert.match(app, /ProfileScreen/);
+  assert.match(app, /CalendarMonth/);
+  assert.match(app, /ScheduleEditor/);
+  assert.match(app, /\/api\/schedule/);
+  assert.match(app, /\/api\/admin\/schedule/);
+  assert.match(app, /datetimeLocalToBishkekIso/);
+  assert.doesNotMatch(app, /VibeCoding-1/);
+  assert.doesNotMatch(app, /RotatingGroupBadge/);
+  assert.doesNotMatch(app, /GROUP_BADGES/);
+  assert.doesNotMatch(app, /3200/);
   assert.doesNotMatch(app, /12 занятий/);
   assert.doesNotMatch(app, />ONLINE</);
   assert.doesNotMatch(app, /className="status"/);
@@ -55,6 +64,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /medalBand/);
   assert.match(app, /medalBadge/);
   assert.match(app, /BottomNav/);
+  assert.match(app, /onProfile/);
+  assert.match(app, /activeScreen === "profile" \? "page"/);
   assert.match(app, /navIconHomework/);
   assert.match(app, /uploadArrow/);
   assert.match(app, /HomeworkUploadScreen/);
@@ -144,6 +155,15 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.uploadArrow::after\s*{[^}]*border-bottom:\s*14px solid #11131b/s);
   assert.match(css, /\.uploadScreen\s*{[^}]*padding:\s*2px 0 112px/s);
   assert.match(css, /\.homeworkCard\s*{[^}]*gap:\s*10px/s);
+  assert.match(css, /\.homeworkCard\s*{[^}]*background:\s*transparent/s);
+  assert.match(css, /\.homeworkCard\s*{[^}]*box-shadow:\s*none/s);
+  assert.match(css, /\.profileScreen\s*{[^}]*padding:\s*0 0 112px/s);
+  assert.match(css, /\.calendarCard\s*{[^}]*aspect-ratio:\s*1 \/ 1/s);
+  assert.match(css, /\.calendarCard\s*{[^}]*background:\s*var\(--card\)/s);
+  assert.match(css, /\.calendarGrid\s*{[^}]*grid-template-columns:\s*repeat\(7,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(css, /\.calendarDay\.completed\s*{[^}]*background:\s*var\(--yellow\)/s);
+  assert.match(css, /\.scheduleEditor\s*{[^}]*background:\s*var\(--card\)/s);
+  assert.match(css, /\.scheduleLessonField input\s*{[^}]*font-size:\s*16px/s);
   assert.match(css, /\.homeworkDrop\s*{[^}]*min-height:\s*clamp\(118px,\s*19svh,\s*156px\)/s);
   assert.doesNotMatch(css, /\.uploadHeader/);
   assert.doesNotMatch(css, /\.uploadBack/);
@@ -177,8 +197,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.bulkInput:focus\s*{[^}]*background:\s*#e8ebef/s);
   assert.match(css, /\.bulkInput:focus\s*{[^}]*border-color:\s*var\(--yellow\)/s);
   assert.match(css, /\.bulkInput::selection\s*{[^}]*background:\s*rgba\(255,\s*223,\s*38,\s*0\.48\)/s);
-  assert.match(css, /\.groupBadgeText\s*{[^}]*animation:\s*badgeSwap 760ms/s);
-  assert.match(css, /@keyframes badgeSwap/);
+  assert.doesNotMatch(css, /badgeSwap/);
   assert.match(css, /\.lessonGrid\s*{[^}]*grid-template-columns:\s*repeat\(12,\s*minmax\(0,\s*1fr\)\)/s);
   assert.match(css, /\.lessonEditor\s*{[^}]*margin-top:\s*0/s);
   assert.match(css, /\.lessonEditor\s*{[^}]*padding-top:\s*1px/s);
@@ -195,8 +214,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /добавить ученика/);
 });
 
-test("includes leaderboard, homework, and admin API surfaces", async () => {
-  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, homeworkRoute, homeworkStore, hosting, store] = await Promise.all([
+test("includes leaderboard, homework, schedule, and admin API surfaces", async () => {
+  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, homeworkRoute, scheduleRoute, adminScheduleRoute, homeworkStore, hosting, store, schedule, schema] = await Promise.all([
     readFile(new URL("../app/api/leaderboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/[studentId]/route.ts", import.meta.url), "utf8"),
@@ -205,9 +224,13 @@ test("includes leaderboard, homework, and admin API surfaces", async () => {
     readFile(new URL("../app/api/avatar/[studentId]/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/youtube/upload-session/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/homework/submit/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/schedule/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/schedule/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/homework.ts", import.meta.url), "utf8"),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../lib/store.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/schedule.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(leaderboardRoute, /listStudents/);
@@ -228,6 +251,9 @@ test("includes leaderboard, homework, and admin API surfaces", async () => {
   assert.match(homeworkRoute, /request\.formData/);
   assert.match(homeworkRoute, /findByTelegramUserId/);
   assert.match(homeworkRoute, /createHomeworkSubmission/);
+  assert.match(scheduleRoute, /getLessonSchedule/);
+  assert.match(adminScheduleRoute, /requireAdmin/);
+  assert.match(adminScheduleRoute, /saveLessonSchedule/);
   assert.match(homeworkStore, /homework_submissions/);
   assert.match(homeworkStore, /HOMEWORK_FILES/);
   assert.match(homeworkStore, /bucket\.put/);
@@ -242,6 +268,17 @@ test("includes leaderboard, homework, and admin API surfaces", async () => {
   assert.doesNotMatch(store, /return \(await listAllStudents\(currentTelegramUserId\)\)\.find\(\(item\) => item\.id === studentId\)/);
   assert.match(store, /findAvatarSourceByStudentId/);
   assert.match(store, /\/api\/avatar\/\$\{row\.id\}/);
+  assert.match(store, /lesson_schedule/);
+  assert.match(store, /seedLessonScheduleIfEmpty/);
+  assert.match(store, /saveLessonSchedule/);
+  assert.match(schedule, /DEFAULT_LESSON_SCHEDULE/);
+  assert.match(schedule, /2026-07-22T16:00:00\+06:00/);
+  assert.match(schedule, /2026-07-24T16:00:00\+06:00/);
+  assert.match(schedule, /2026-08-03T16:00:00\+06:00/);
+  assert.match(schedule, /currentLabel:\s*`\$\{currentCourseMonth\} мес \$\{completed\.length\} урок`/);
+  assert.match(schedule, /scheduleMonths/);
+  assert.match(schema, /lessonSchedule/);
+  assert.match(schema, /lesson_schedule/);
 });
 
 test("admin score picker stays in one compact row", async () => {

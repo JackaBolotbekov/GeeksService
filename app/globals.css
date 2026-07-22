@@ -174,7 +174,6 @@ button:disabled {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
-  animation: badgeSwap 760ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .addToggle,
@@ -941,6 +940,11 @@ button:disabled {
 
 .homeworkCard {
   gap: 10px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .homeworkCard .uploadField textarea {
@@ -953,6 +957,249 @@ button:disabled {
 
 .homeworkDrop {
   min-height: clamp(118px, 19svh, 156px);
+}
+
+.profileScreen {
+  display: grid;
+  gap: 10px;
+  padding: 0 0 112px;
+  animation: none;
+}
+
+.calendarHero {
+  display: grid;
+  gap: 8px;
+}
+
+.calendarTopline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--yellow);
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.calendarEditButton {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #11131b;
+  border-radius: 13px;
+  background: var(--yellow);
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 950;
+  box-shadow: 3px 3px 0 #11131b;
+  transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+}
+
+.calendarEditButton[aria-expanded="true"] {
+  transform: translateY(1px);
+  box-shadow: 1px 1px 0 #11131b;
+}
+
+.calendarCard {
+  aspect-ratio: 1 / 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  padding: clamp(9px, 2.6vw, 14px);
+  border: 3px solid #11131b;
+  border-radius: 26px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow:
+    6px 6px 0 var(--yellow),
+    0 20px 42px rgba(0, 0, 0, 0.18);
+}
+
+.calendarHeader {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 38px;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.calendarHeader strong {
+  min-width: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(21px, 6.4vw, 34px);
+  font-weight: 950;
+  letter-spacing: -0.05em;
+  text-transform: uppercase;
+}
+
+.calendarHeader button {
+  width: 38px;
+  height: 38px;
+  border: 2px solid #11131b;
+  border-radius: 13px;
+  background: #fffdf6;
+  color: var(--ink);
+  font-size: 21px;
+  font-weight: 950;
+  box-shadow: 2px 2px 0 #11131b;
+  transition: transform 140ms ease, box-shadow 140ms ease, opacity 140ms ease;
+}
+
+.calendarHeader button:not(:disabled):active {
+  transform: translateY(1px);
+  box-shadow: 1px 1px 0 #11131b;
+}
+
+.calendarHeader button:disabled {
+  opacity: 0.28;
+}
+
+.calendarGrid {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-rows: 22px repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.calendarWeekday {
+  display: grid;
+  place-items: center;
+  color: #7a7e88;
+  font-size: clamp(10px, 2.7vw, 12px);
+  font-weight: 950;
+}
+
+.calendarDay {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(17, 19, 27, 0.18);
+  border-radius: 12px;
+  background: #f8f5ec;
+  color: #8f949d;
+  box-shadow: inset 0 -2px 0 rgba(17, 19, 27, 0.05);
+}
+
+.calendarDay strong {
+  font-size: clamp(13px, 3.8vw, 18px);
+  font-weight: 950;
+  line-height: 1;
+}
+
+.calendarDay small {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  color: rgba(17, 19, 27, 0.62);
+  font-size: 9px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.calendarDay.lesson {
+  border-color: #11131b;
+  background: #fffdf6;
+  color: var(--ink);
+}
+
+.calendarDay.completed {
+  background: var(--yellow);
+  color: var(--ink);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.44),
+    inset 0 -3px 0 rgba(17, 19, 27, 0.12);
+}
+
+.calendarDay.today {
+  outline: 2px solid #65e58a;
+  outline-offset: -4px;
+}
+
+.calendarDay.empty {
+  visibility: hidden;
+}
+
+.calendarNote {
+  margin: 0;
+  color: rgba(246, 243, 234, 0.74);
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.calendarNote.error {
+  color: #ffb3b3;
+}
+
+.scheduleEditor {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 3px solid #11131b;
+  border-radius: 24px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 6px 6px 0 var(--yellow);
+}
+
+.scheduleEditorGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 7px;
+}
+
+.scheduleLessonField {
+  display: grid;
+  grid-template-columns: 31px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.scheduleLessonField span {
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #11131b;
+  border-radius: 11px;
+  background: var(--yellow);
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 950;
+  box-shadow: 2px 2px 0 #11131b;
+}
+
+.scheduleLessonField input {
+  min-width: 0;
+  width: 100%;
+  height: 39px;
+  padding: 0 10px;
+  border: 2px solid #11131b;
+  border-radius: 13px;
+  background: #eef0f2;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 850;
+  outline: none;
+}
+
+.scheduleLessonField input:focus {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 3px rgba(255, 223, 38, 0.28);
+}
+
+.scheduleActions {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 8px;
 }
 
 .homeworkDrop .dropIcon {
@@ -1432,19 +1679,6 @@ button:disabled {
   }
   50% {
     opacity: 0.8;
-  }
-}
-
-@keyframes badgeSwap {
-  from {
-    opacity: 0;
-    transform: translateY(5px) scale(0.99);
-    filter: blur(2px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-    filter: blur(0);
   }
 }
 
