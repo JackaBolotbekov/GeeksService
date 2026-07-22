@@ -810,7 +810,9 @@ function Avatar({ student, showMedal = false }: { student: StudentView; showMeda
       {avatar}
       {medal && (
         <span className={`podiumMedal ${medal.kind}`} aria-label={medal.label} title={medal.label}>
-          {medal.place}
+          <span className="medalBand left" aria-hidden="true" />
+          <span className="medalBand right" aria-hidden="true" />
+          <span className="medalBadge">{medal.place}</span>
         </span>
       )}
     </span>

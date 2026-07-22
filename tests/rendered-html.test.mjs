@@ -44,6 +44,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /lessonTab/);
   assert.match(app, /showMedal/);
   assert.match(app, /podiumMedal/);
+  assert.match(app, /medalBand/);
+  assert.match(app, /medalBadge/);
   assert.match(app, /BottomNav/);
   assert.match(app, /navIconHomework/);
   assert.match(app, /<strong>\{cell\.score \?\? cell\.lessonNumber\}<\/strong>/);
@@ -91,11 +93,15 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.leaderboard\s*{[^}]*gap:\s*10px/s);
   assert.match(css, /\.leaderboard\s*{[^}]*user-select:\s*none/s);
   assert.match(css, /\.avatarWrap\s*{[^}]*position:\s*relative/s);
-  assert.match(css, /\.podiumMedal\.gold\s*{[^}]*background:\s*linear-gradient/s);
-  assert.match(css, /\.podiumMedal\.silver\s*{[^}]*background:\s*linear-gradient/s);
-  assert.match(css, /\.podiumMedal\.bronze\s*{[^}]*background:\s*linear-gradient/s);
+  assert.match(css, /\.podiumMedal\s*{[^}]*inset:\s*0/s);
+  assert.match(css, /\.medalBand\s*{[^}]*position:\s*absolute/s);
+  assert.match(css, /\.medalBadge\s*{[^}]*border-radius:\s*999px/s);
+  assert.match(css, /\.podiumMedal\.gold\s*{[^}]*--award-mid:\s*var\(--yellow\)/s);
+  assert.match(css, /\.podiumMedal\.silver\s*{[^}]*--award-mid:\s*#dde3ec/s);
+  assert.match(css, /\.podiumMedal\.bronze\s*{[^}]*--award-mid:\s*#d98542/s);
   assert.match(css, /\.bottomNav\s*{[^}]*position:\s*fixed/s);
   assert.match(css, /\.bottomNav\s*{[^}]*pointer-events:\s*none/s);
+  assert.match(css, /\.bottomNav::before\s*{[^}]*border-radius:\s*999px/s);
   assert.match(css, /\.bottomNavButton\s*{[^}]*pointer-events:\s*auto/s);
   assert.match(css, /\.bottomNavPrimary\s*{[^}]*border-radius:\s*999px/s);
   assert.match(css, /input,\s*select,\s*textarea\s*{[^}]*font-size:\s*16px/s);

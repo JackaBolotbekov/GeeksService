@@ -357,7 +357,7 @@ button:disabled {
   gap: 10px;
   width: 100%;
   min-width: 0;
-  padding: 0 3px 88px 0;
+  padding: 0 3px 106px 0;
   overflow: visible;
   user-select: none;
   -webkit-user-select: none;
@@ -467,6 +467,7 @@ button:disabled {
   flex: 0 0 auto;
   display: inline-grid;
   place-items: center;
+  isolation: isolate;
 }
 
 .avatarWrap .avatar {
@@ -476,35 +477,86 @@ button:disabled {
 
 .podiumMedal {
   position: absolute;
-  top: -7px;
-  right: -8px;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+  --award-light: #fff38a;
+  --award-mid: var(--yellow);
+  --award-dark: #d9aa00;
+  --award-text: #11131b;
+}
+
+.medalBand {
+  position: absolute;
+  z-index: 1;
+  bottom: clamp(2px, 0.7vw, 4px);
+  width: 48%;
+  height: clamp(12px, 3vw, 16px);
+  border: 2px solid #11131b;
+  background: linear-gradient(180deg, var(--award-light) 0%, var(--award-mid) 58%, var(--award-dark) 100%);
+  box-shadow:
+    inset 0 -2px 0 rgba(17, 19, 27, 0.14),
+    0 2px 0 rgba(17, 19, 27, 0.88);
+}
+
+.medalBand.left {
+  left: 2px;
+  border-radius: 999px 7px 10px 999px;
+  transform: rotate(12deg);
+  transform-origin: right center;
+}
+
+.medalBand.right {
+  right: 2px;
+  border-radius: 7px 999px 999px 10px;
+  transform: rotate(-12deg);
+  transform-origin: left center;
+}
+
+.medalBadge {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  bottom: clamp(-3px, -0.7vw, -1px);
   width: clamp(23px, 5.9vw, 29px);
   height: clamp(23px, 5.9vw, 29px);
   display: grid;
   place-items: center;
   border: 2px solid #11131b;
   border-radius: 999px;
-  color: #11131b;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.8) 0 10%, transparent 13%),
+    linear-gradient(180deg, var(--award-light) 0%, var(--award-mid) 56%, var(--award-dark) 100%);
+  color: var(--award-text);
   font-size: clamp(12px, 3.2vw, 15px);
   font-weight: 950;
   line-height: 1;
+  transform: translateX(-50%);
   box-shadow:
-    inset 0 -2px 0 rgba(17, 19, 27, 0.12),
-    0 2px 0 #11131b,
-    0 5px 10px rgba(0, 0, 0, 0.18);
+    inset 0 -2px 0 rgba(17, 19, 27, 0.14),
+    0 2px 0 rgba(17, 19, 27, 0.94),
+    0 5px 10px rgba(0, 0, 0, 0.16);
 }
 
 .podiumMedal.gold {
-  background: linear-gradient(180deg, #fff4a8 0%, var(--yellow) 58%, #eebd00 100%);
+  --award-light: #fff38a;
+  --award-mid: var(--yellow);
+  --award-dark: #d9aa00;
+  --award-text: #11131b;
 }
 
 .podiumMedal.silver {
-  background: linear-gradient(180deg, #ffffff 0%, #e4e8ef 55%, #aeb6c4 100%);
+  --award-light: #ffffff;
+  --award-mid: #dde3ec;
+  --award-dark: #a9b1bf;
+  --award-text: #11131b;
 }
 
 .podiumMedal.bronze {
-  background: linear-gradient(180deg, #ffd6a7 0%, #c97938 58%, #8f4d24 100%);
-  color: #17110c;
+  --award-light: #ffd2a0;
+  --award-mid: #d98542;
+  --award-dark: #965126;
+  --award-text: #17110c;
 }
 
 .studentInfo {
@@ -870,20 +922,23 @@ button:disabled {
 .bottomNav {
   position: fixed;
   left: 50%;
-  bottom: max(8px, env(safe-area-inset-bottom));
+  bottom: max(7px, env(safe-area-inset-bottom));
   z-index: 60;
-  width: min(360px, calc(100dvw - 24px));
-  height: 58px;
+  width: min(390px, calc(100dvw - 14px));
+  height: 76px;
   display: grid;
-  grid-template-columns: 1fr 76px 1fr;
+  grid-template-columns: minmax(0, 1fr) 78px minmax(0, 1fr);
   align-items: end;
-  gap: 10px;
-  padding: 7px 10px;
+  gap: 12px;
+  padding: 11px 14px 10px;
   border: 2px solid rgba(17, 19, 27, 0.96);
-  border-radius: 24px 24px 18px 18px;
-  background: rgba(17, 19, 27, 0.90);
+  border-radius: 34px 34px 22px 22px;
+  background:
+    linear-gradient(180deg, rgba(38, 41, 51, 0.95) 0%, rgba(16, 18, 25, 0.96) 76%),
+    rgba(17, 19, 27, 0.94);
   box-shadow:
-    0 -10px 30px rgba(0, 0, 0, 0.24),
+    0 -12px 34px rgba(0, 0, 0, 0.28),
+    0 4px 0 rgba(0, 0, 0, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   pointer-events: none;
   transform: translateX(-50%);
@@ -891,17 +946,36 @@ button:disabled {
   -webkit-backdrop-filter: blur(14px);
 }
 
+.bottomNav::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -23px;
+  width: 91px;
+  height: 91px;
+  border: 2px solid rgba(17, 19, 27, 0.96);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(40, 43, 53, 0.96) 0%, rgba(17, 19, 27, 0.98) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transform: translateX(-50%);
+}
+
 .bottomNavButton {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   width: 100%;
-  height: 42px;
+  height: 49px;
   display: grid;
   place-items: center;
-  border: 2px solid #11131b;
-  border-radius: 15px;
-  background: #f7f3ea;
+  border: 3px solid #11131b;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #fffdf6 0%, #ebe6db 100%);
   color: #11131b;
-  box-shadow: 0 3px 0 rgba(17, 19, 27, 0.92);
+  box-shadow:
+    inset 0 -3px 0 rgba(17, 19, 27, 0.08),
+    0 4px 0 rgba(17, 19, 27, 0.92),
+    0 9px 14px rgba(0, 0, 0, 0.18);
   pointer-events: auto;
   transition:
     transform 140ms ease,
@@ -916,12 +990,14 @@ button:disabled {
 }
 
 .bottomNavPrimary {
-  width: 66px;
-  height: 66px;
+  z-index: 2;
+  width: 72px;
+  height: 72px;
   justify-self: center;
   border-radius: 999px;
-  transform: translateY(-15px);
+  transform: translateY(-19px);
   box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.38),
     inset 0 -3px 0 rgba(17, 19, 27, 0.14),
     0 4px 0 rgba(17, 19, 27, 0.92),
     0 10px 18px rgba(0, 0, 0, 0.20);
@@ -933,34 +1009,34 @@ button:disabled {
 }
 
 .bottomNavPrimary:active {
-  transform: translateY(-12px) scale(0.98);
+  transform: translateY(-16px) scale(0.98);
 }
 
 .navIconRank {
-  height: 24px;
+  height: 28px;
   display: grid;
-  grid-template-columns: repeat(3, 6px);
+  grid-template-columns: repeat(3, 7px);
   align-items: end;
-  gap: 4px;
+  gap: 5px;
 }
 
 .navIconRank i {
   display: block;
-  width: 6px;
+  width: 7px;
   border-radius: 6px 6px 3px 3px;
   background: #11131b;
 }
 
 .navIconRank i:nth-child(1) {
-  height: 12px;
+  height: 15px;
 }
 
 .navIconRank i:nth-child(2) {
-  height: 19px;
+  height: 24px;
 }
 
 .navIconRank i:nth-child(3) {
-  height: 15px;
+  height: 19px;
 }
 
 .navIconHomework {
@@ -976,13 +1052,13 @@ button:disabled {
 .navIconHomework span {
   display: block;
   margin-bottom: -3px;
-  font-size: 20px;
+  font-size: 23px;
   line-height: 0.8;
 }
 
 .navIconHomework strong {
   display: block;
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1;
 }
 
