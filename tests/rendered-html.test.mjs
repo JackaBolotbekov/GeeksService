@@ -173,9 +173,9 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.bottomNavButton\.active,\s*\.bottomNavPrimary\.active\s*{/s);
   assert.doesNotMatch(css, /\.bottomNavButton\.active,\s*\.bottomNavPrimary\s*{/s);
   assert.match(css, /\.bottomNavPrimary\s*{[^}]*border-radius:\s*999px/s);
-  assert.match(css, /\.bottomNavPrimary\.locked\s*{[^}]*background:\s*linear-gradient\(180deg,\s*#fff078/s);
+  assert.match(css, /\.bottomNavPrimary\.locked\s*{[^}]*background:\s*linear-gradient\(180deg,\s*#272b36/s);
   assert.match(css, /\.navIconGeeks\s*{[^}]*background:\s*transparent/s);
-  assert.match(css, /\.navIconGeeks\s*{[^}]*width:\s*30px/s);
+  assert.match(css, /\.navIconGeeks\s*{[^}]*width:\s*34px/s);
   assert.match(css, /\.uploadArrow::before\s*{[^}]*height:\s*15px/s);
   assert.match(css, /\.uploadArrow::after\s*{[^}]*border-bottom:\s*14px solid #11131b/s);
   assert.match(css, /\.uploadScreen\s*{[^}]*padding:\s*2px 0 112px/s);
@@ -188,7 +188,10 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.homeworkSubmitActions \.uploadPrimary\s*{[^}]*width:\s*100%/s);
   assert.match(css, /\.calendarDay \.calendarLessonBadge:not\(\.transferBadge\)\s*{[^}]*right:\s*auto;[^}]*left:\s*-6px/s);
   assert.match(css, /\.profileScreen\s*{[^}]*padding:\s*0 0 112px/s);
-  assert.match(css, /\.calendarCard\s*{[^}]*aspect-ratio:\s*1 \/ 1/s);
+  assert.match(css, /\.calendarCard\s*{[^}]*aspect-ratio:\s*auto/s);
+  assert.match(css, /\.calendarCard\s*{[^}]*grid-template-rows:\s*auto auto/s);
+  assert.match(css, /\.calendarHeader\s*{[^}]*grid-template-columns:\s*38px minmax\(0,\s*1fr\) 38px/s);
+  assert.match(css, /\.calendarHeader button\s*{[^}]*width:\s*38px/s);
   assert.match(css, /\.calendarCard\s*{[^}]*background:\s*var\(--card\)/s);
   assert.match(css, /\.calendarCard\s*{[^}]*touch-action:\s*pan-y/s);
   assert.match(css, /\.calendarGrid\s*{[^}]*grid-template-columns:\s*repeat\(7,\s*minmax\(0,\s*1fr\)\)/s);
@@ -196,7 +199,10 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.calendarDay\.upcoming\s*{[^}]*background:\s*#fff4a8/s);
   assert.match(css, /\.calendarDay\.transfer\s*{[^}]*background:\s*#ffd9a8/s);
   assert.match(css, /\.calendarDay\.today\s*{[^}]*background:\s*#dff7e7/s);
-  assert.match(css, /\.calendarSwipeHint\s*{/);
+  assert.doesNotMatch(css, /\.calendarSwipeHint\s*{/);
+  assert.match(app, /aria-label="Предыдущий учебный месяц"/);
+  assert.match(app, /aria-label="Следующий учебный месяц"/);
+  assert.doesNotMatch(app, /calendarSwipeHint/);
   assert.match(css, /@keyframes calendarSlideNext/);
   assert.match(css, /@keyframes badgeTextSwap/);
   assert.match(css, /\.scheduleEditor\s*{[^}]*background:\s*var\(--card\)/s);

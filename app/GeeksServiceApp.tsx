@@ -889,18 +889,27 @@ function ProfileScreen({
             }}
           >
             <div className="calendarHeader">
+              <button
+                type="button"
+                disabled={safeMonthIndex <= 0}
+                onClick={() => navigateMonth(-1)}
+                aria-label="Предыдущий учебный месяц"
+              >
+                ←
+              </button>
               <strong>{currentMonth.label}</strong>
+              <button
+                type="button"
+                disabled={safeMonthIndex >= months.length - 1}
+                onClick={() => navigateMonth(1)}
+                aria-label="Следующий учебный месяц"
+              >
+                →
+              </button>
             </div>
             <div className={`calendarMonthPane ${monthMotion}`} key={currentMonth.key} onAnimationEnd={() => setMonthMotion("idle")}>
               <CalendarMonth month={currentMonth} lessons={schedule.lessons} />
             </div>
-            {months.length > 1 && (
-              <div className="calendarSwipeHint" aria-hidden="true">
-                <span>‹</span>
-                <strong>свайп</strong>
-                <span>›</span>
-              </div>
-            )}
           </div>
         )}
 
