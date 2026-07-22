@@ -859,7 +859,7 @@ function ProfileScreen({
     <section className="profileScreen">
       <div className="calendarHero">
         <div className="calendarTopline">
-          <span>Длительность обучения: 1 мес. 12 уроков</span>
+          <span>Длительность обучения: 1 мес. 12 занятий</span>
           {isAdmin && (
             <button
               type="button"
@@ -961,9 +961,10 @@ function CalendarMonth({
         const mainLesson = dayLessons[0] ?? null;
         const completed = dayLessons.some((lesson) => lesson.isCompleted);
         const isTransfer = transferDates.has(key);
+        const isPastOrToday = key <= today;
         return (
           <span
-            className={`calendarDay ${mainLesson ? "lesson" : ""} ${mainLesson && !completed ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${key === today ? "today" : ""}`}
+            className={`calendarDay ${isPastOrToday ? "past" : ""} ${mainLesson ? "lesson" : ""} ${mainLesson && !isPastOrToday ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${key === today ? "today" : ""}`}
             key={key}
             title={isTransfer ? "Перенос" : mainLesson ? `Урок ${mainLesson.lessonNumber}` : undefined}
           >

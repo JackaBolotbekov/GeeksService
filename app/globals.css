@@ -1164,6 +1164,12 @@ button:disabled {
   left: -6px;
 }
 
+.calendarDay.past {
+  border-color: rgba(17, 19, 27, 0.3);
+  background: #fffdf6;
+  color: var(--ink);
+}
+
 .calendarDay.lesson {
   border-color: #11131b;
   background: #fffdf6;
@@ -1194,16 +1200,19 @@ button:disabled {
 }
 
 .calendarDay.transfer .transferBadge {
-  left: 5px;
-  right: 5px;
-  width: auto;
-  min-width: 0;
-  height: 16px;
-  padding: 0 3px;
-  border-radius: 7px;
-  font-size: clamp(6px, 1.75vw, 8px);
-  letter-spacing: -0.04em;
+  left: 50%;
+  right: auto;
+  width: max-content;
+  min-width: max-content;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: clamp(7px, 1.9vw, 9px);
+  letter-spacing: -0.025em;
   text-transform: uppercase;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  z-index: 2;
 }
 
 .calendarDay.today {

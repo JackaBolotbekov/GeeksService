@@ -54,7 +54,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /RotatingGroupBadge/);
   assert.doesNotMatch(app, /GROUP_BADGES/);
   assert.doesNotMatch(app, /3200/);
-  assert.doesNotMatch(app, /12 занятий/);
+  assert.match(app, /Длительность обучения: 1 мес\. 12 занятий/);
   assert.doesNotMatch(app, />ONLINE</);
   assert.doesNotMatch(app, /className="status"/);
   assert.doesNotMatch(app, /домашек ·/);
@@ -198,10 +198,13 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.calendarCard\s*{[^}]*background:\s*var\(--card\)/s);
   assert.match(css, /\.calendarCard\s*{[^}]*touch-action:\s*pan-y/s);
   assert.match(css, /\.calendarGrid\s*{[^}]*grid-template-columns:\s*repeat\(7,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(css, /\.calendarDay\.past\s*{[^}]*background:\s*#fffdf6/s);
   assert.match(css, /\.calendarDay\.completed\s*{[^}]*background:\s*var\(--yellow\)/s);
   assert.match(css, /\.calendarDay\.upcoming\s*{[^}]*background:\s*#fff4a8/s);
   assert.match(css, /\.calendarDay\.transfer\s*{[^}]*background:\s*#ffd9a8/s);
   assert.match(css, /\.calendarDay\.today\s*{[^}]*background:\s*#dff7e7/s);
+  assert.match(css, /\.calendarDay\.transfer \.transferBadge\s*{[^}]*width:\s*max-content;[^}]*white-space:\s*nowrap;[^}]*transform:\s*translateX\(-50%\)/s);
+  assert.match(app, /Длительность обучения: 1 мес\. 12 занятий/);
   assert.doesNotMatch(css, /\.calendarSwipeHint\s*{/);
   assert.match(app, /aria-label="Предыдущий учебный месяц"/);
   assert.match(app, /aria-label="Следующий учебный месяц"/);
