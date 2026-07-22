@@ -48,6 +48,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /medalBadge/);
   assert.match(app, /BottomNav/);
   assert.match(app, /navIconHomework/);
+  assert.match(app, /uploadArrow/);
   assert.match(app, /<strong>\{cell\.score \?\? cell\.lessonNumber\}<\/strong>/);
   assert.doesNotMatch(app, /<span>\{cell\.lessonNumber\}<\/span>/);
   assert.doesNotMatch(app, /<small>\{cell\.lessonNumber\}<\/small>/);
@@ -104,7 +105,9 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.bottomNav\s*{[^}]*pointer-events:\s*none/s);
   assert.match(css, /\.bottomNav::before\s*{[^}]*content:\s*none/s);
   assert.match(css, /\.bottomNavButton\s*{[^}]*pointer-events:\s*auto/s);
-  assert.match(css, /\.bottomNavPrimary\s*{[^}]*border-radius:\s*21px/s);
+  assert.match(css, /\.bottomNavPrimary\s*{[^}]*border-radius:\s*999px/s);
+  assert.match(css, /\.uploadArrow::before\s*{[^}]*height:\s*15px/s);
+  assert.match(css, /\.uploadArrow::after\s*{[^}]*border-bottom:\s*14px solid #11131b/s);
   assert.match(css, /input,\s*select,\s*textarea\s*{[^}]*font-size:\s*16px/s);
   assert.match(css, /html,\s*body\s*{[^}]*overflow-y:\s*hidden/s);
   assert.match(css, /html,\s*body\s*{[^}]*touch-action:\s*auto/s);

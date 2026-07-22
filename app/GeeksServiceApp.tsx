@@ -830,7 +830,7 @@ function BottomNav() {
         <span className="navIcon navIconRank" aria-hidden="true"><i /><i /><i /></span>
       </button>
       <button type="button" className="bottomNavButton bottomNavPrimary" aria-label="Отправить ДЗ" onClick={handleNavTap}>
-        <span className="navIcon navIconHomework" aria-hidden="true"><span>↑</span><strong>ДЗ</strong></span>
+        <span className="navIcon navIconHomework" aria-hidden="true"><span className="uploadArrow" /><strong>ДЗ</strong></span>
       </button>
       <button type="button" className="bottomNavButton" aria-label="Профиль" onClick={handleNavTap}>
         <span className="navIcon navIconProfile" aria-hidden="true" />
