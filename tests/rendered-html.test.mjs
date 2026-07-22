@@ -27,7 +27,11 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /lastScoredAt/);
   assert.match(app, /compareScoreTime\(left\.lastScoredAt,\s*right\.lastScoredAt\)/);
   assert.match(app, /setLeaderboardFast/);
+  assert.match(app, /LEADERBOARD_CACHE_KEY/);
+  assert.match(app, /readCachedLeaderboard/);
+  assert.match(app, /writeCachedLeaderboard/);
   assert.match(app, /new Date\(\)\.toISOString\(\)/);
+  assert.doesNotMatch(app, /key=\{bulkEditMode \? "bulk-edit" : "score-view"\}/);
   assert.doesNotMatch(app, /pointsBehindLeader === 0 \? "TOP"/);
   assert.doesNotMatch(app, /<h1>/);
   assert.doesNotMatch(app, /heroStats/);
@@ -67,7 +71,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /Content-Range/);
   assert.match(app, /\/api\/admin\/youtube\/upload-session/);
   assert.match(app, /activeScreen === "homeworkUpload"/);
-  assert.doesNotMatch(app, /runWithViewTransition\(\(\) => setActiveScreen/);
+  assert.doesNotMatch(app, /runWithViewTransition/);
+  assert.doesNotMatch(app, /startViewTransition/);
   assert.doesNotMatch(app, /uploadHeader/);
   assert.doesNotMatch(app, /uploadBack/);
   assert.doesNotMatch(app, /setupNotice/);
@@ -114,6 +119,9 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.delta\s*{[^}]*background:\s*linear-gradient/s);
   assert.match(css, /\.delta\s*{[^}]*-webkit-text-stroke:\s*0 transparent/s);
   assert.match(css, /\.student\s*{[^}]*overflow:\s*visible/s);
+  assert.match(css, /\.student\s*{[^}]*animation:\s*none/s);
+  assert.doesNotMatch(css, /@keyframes cardIn/);
+  assert.doesNotMatch(css, /::view-transition-old/);
   assert.match(css, /\.leaderboard\s*{[^}]*gap:\s*10px/s);
   assert.match(css, /\.leaderboard\s*{[^}]*user-select:\s*none/s);
   assert.match(css, /\.avatarWrap\s*{[^}]*position:\s*relative/s);
@@ -124,7 +132,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.podiumMedal\.silver\s*{[^}]*--award-mid:\s*#dde3ec/s);
   assert.match(css, /\.podiumMedal\.bronze\s*{[^}]*--award-mid:\s*#d98542/s);
   assert.match(css, /\.bottomNav\s*{[^}]*position:\s*fixed/s);
-  assert.match(css, /\.bottomNav\s*{[^}]*width:\s*min\(392px,\s*calc\(100dvw - 18px\)\)/s);
+  assert.match(css, /\.bottomNav\s*{[^}]*width:\s*min\(384px,\s*calc\(100dvw - 18px\)\)/s);
+  assert.match(css, /\.bottomNav\s*{[^}]*height:\s*60px/s);
   assert.match(css, /\.bottomNav\s*{[^}]*pointer-events:\s*none/s);
   assert.match(css, /\.bottomNav::before\s*{[^}]*content:\s*none/s);
   assert.match(css, /\.bottomNavButton\s*{[^}]*pointer-events:\s*auto/s);
@@ -171,8 +180,10 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.groupBadgeText\s*{[^}]*animation:\s*badgeSwap 760ms/s);
   assert.match(css, /@keyframes badgeSwap/);
   assert.match(css, /\.lessonGrid\s*{[^}]*grid-template-columns:\s*repeat\(12,\s*minmax\(0,\s*1fr\)\)/s);
-  assert.match(css, /\.lessonEditor\s*{[^}]*margin-top:\s*3px/s);
-  assert.match(css, /\.lessonEditor\s*{[^}]*padding-top:\s*4px/s);
+  assert.match(css, /\.lessonEditor\s*{[^}]*margin-top:\s*0/s);
+  assert.match(css, /\.lessonEditor\s*{[^}]*padding-top:\s*1px/s);
+  assert.match(css, /\.lessonEditor\s*{[^}]*border-top:\s*1px solid/s);
+  assert.match(css, /\.lessonEditor\s*{[^}]*animation:\s*none/s);
   assert.match(css, /\.lessonChip\s*{[^}]*height:\s*32px/s);
   assert.match(css, /\.lessonChip\s*{[^}]*border-radius:\s*8px/s);
   assert.match(css, /\.lessonChip:not\(\.filled\) strong\s*{[^}]*color:\s*#747985/s);

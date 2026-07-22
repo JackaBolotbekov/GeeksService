@@ -3,7 +3,6 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from "react";
-import { flushSync } from "react-dom";
 import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, MeResponse, StudentView } from "@/lib/types";
 
 declare global {
@@ -37,13 +36,6 @@ type TelegramWebApp = {
   };
 };
 
-type ViewTransitionHandle = {
-  finished: Promise<void>;
-  ready: Promise<void>;
-  updateCallbackDone: Promise<void>;
-  skipTransition: () => void;
-};
-
 type StudentPatch = {
   displayName?: string;
   telegramUsername?: string | null;
@@ -75,6 +67,7 @@ type UploadChunkInput = {
 };
 
 const VIDEO_CHUNK_SIZE = 16 * 1024 * 1024;
+const LEADERBOARD_CACHE_KEY = "geeks-service:leaderboard:v1";
 
 async function api<T>(path: string, options: RequestInit = {}, sessionToken?: string): Promise<T> {
   const response = await fetch(path, {
@@ -113,27 +106,6 @@ async function waitForTelegramWebApp(timeoutMs = 1200): Promise<TelegramWebApp |
   return window.Telegram?.WebApp;
 }
 
-function prefersReducedMotion(): boolean {
-  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-function runWithViewTransition(update: () => void) {
-  if (typeof document === "undefined" || prefersReducedMotion()) {
-    update();
-    return;
-  }
-  const documentWithTransition = document as Document & {
-    startViewTransition?: (callback: () => void) => ViewTransitionHandle;
-  };
-  if (!documentWithTransition.startViewTransition) {
-    update();
-    return;
-  }
-  documentWithTransition.startViewTransition(() => {
-    flushSync(update);
-  });
-}
-
 function hapticSelection() {
   window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.();
 }
@@ -144,6 +116,27 @@ function hapticImpact(style: "light" | "medium" | "heavy" | "rigid" | "soft" = "
 
 function hapticNotice(type: "error" | "success" | "warning") {
   window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.(type);
+}
+
+function readCachedLeaderboard(): StudentView[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const cached = window.localStorage.getItem(LEADERBOARD_CACHE_KEY);
+    if (!cached) return null;
+    const parsed = JSON.parse(cached) as { students?: StudentView[] };
+    return Array.isArray(parsed.students) ? parsed.students : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedLeaderboard(students: StudentView[]) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LEADERBOARD_CACHE_KEY, JSON.stringify({ students, cachedAt: Date.now() }));
+  } catch {
+    // Best-effort cache only; the server remains the source of truth.
+  }
 }
 
 function formatBytes(bytes: number): string {
@@ -460,7 +453,11 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isPending, setIsPending] = useState(false);
-  const [leaderboard, setLeaderboard] = useState<StudentView[]>(initialStudents);
+  const [leaderboard, setLeaderboard] = useState<StudentView[]>(() => {
+    const rankedInitial = rankVisibleStudents(initialStudents);
+    if (rankedInitial.length > 0) return rankedInitial;
+    return readCachedLeaderboard() ?? rankedInitial;
+  });
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [bulkEditMode, setBulkEditMode] = useState(false);
@@ -472,13 +469,19 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   }, [leaderboard]);
 
   const setLeaderboardSmooth = (next: StudentView[] | ((current: StudentView[]) => StudentView[])) => {
-    runWithViewTransition(() => {
-      setLeaderboard((current) => typeof next === "function" ? next(current) : next);
+    setLeaderboard((current) => {
+      const resolved = typeof next === "function" ? next(current) : next;
+      writeCachedLeaderboard(resolved);
+      return resolved;
     });
   };
 
   const setLeaderboardFast = (next: StudentView[] | ((current: StudentView[]) => StudentView[])) => {
-    setLeaderboard((current) => typeof next === "function" ? next(current) : next);
+    setLeaderboard((current) => {
+      const resolved = typeof next === "function" ? next(current) : next;
+      writeCachedLeaderboard(resolved);
+      return resolved;
+    });
   };
 
   const applyAdminResponse = (next: AdminStudentsResponse) => {
@@ -561,11 +564,9 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
                 aria-pressed={bulkEditMode}
                 onClick={() => {
                   hapticImpact("light");
-                  runWithViewTransition(() => {
-                    setBulkEditMode((current) => !current);
-                    setShowAdminPanel(false);
-                    setExpandedStudentId(null);
-                  });
+                  setBulkEditMode((current) => !current);
+                  setShowAdminPanel(false);
+                  setExpandedStudentId(null);
                 }}
               >
                 ✎
@@ -577,11 +578,9 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
                 aria-expanded={showAdminPanel}
                 onClick={() => {
                   hapticImpact("light");
-                  runWithViewTransition(() => {
-                    setShowAdminPanel((current) => !current);
-                    setBulkEditMode(false);
-                    setExpandedStudentId(null);
-                  });
+                  setShowAdminPanel((current) => !current);
+                  setBulkEditMode(false);
+                  setExpandedStudentId(null);
                 }}
               >
                 +
@@ -611,15 +610,12 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
                 />
               )}
               <Leaderboard
-                key={bulkEditMode ? "bulk-edit" : "score-view"}
                 students={leaderboard}
                 isAdmin={isAdmin && Boolean(sessionToken)}
                 expandedStudentId={expandedStudentId}
                 bulkEditMode={bulkEditMode}
                 onBulkEditClose={() => {
-                  runWithViewTransition(() => {
-                    setBulkEditMode(false);
-                  });
+                  setBulkEditMode(false);
                 }}
                 onToggleStudent={toggleStudent}
                 onScoreChange={async (student, lessonNumber, score) => {
