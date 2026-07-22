@@ -26,3 +26,18 @@ export const lessonScores = sqliteTable("lesson_scores", {
 }, (table) => ({
   studentLessonIdx: uniqueIndex("lesson_scores_student_lesson_unique").on(table.studentId, table.lessonNumber),
 }));
+
+export const homeworkSubmissions = sqliteTable("homework_submissions", {
+  id: text("id").primaryKey(),
+  studentId: text("student_id").references(() => students.id, { onDelete: "set null" }),
+  telegramUserId: text("telegram_user_id").notNull(),
+  studentName: text("student_name").notNull(),
+  links: text("links").notNull().default(""),
+  description: text("description").notNull().default(""),
+  extra: text("extra").notNull().default(""),
+  fileKey: text("file_key"),
+  fileName: text("file_name"),
+  fileType: text("file_type"),
+  fileSize: integer("file_size"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

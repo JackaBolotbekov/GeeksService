@@ -4,7 +4,7 @@
 
 import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import type { AdminStudentsResponse, AuthResponse, LeaderboardResponse, MeResponse, StudentView } from "@/lib/types";
+import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, MeResponse, StudentView } from "@/lib/types";
 
 declare global {
   interface Window {
@@ -17,6 +17,7 @@ declare global {
 type LoadState = "loading" | "ready" | "error";
 type ActiveScreen = "leaderboard" | "homeworkUpload";
 type UploadPhase = "idle" | "creating" | "uploading" | "done" | "error";
+type HomeworkSubmitPhase = "idle" | "submitting" | "done" | "error";
 
 type YouTubeUploadSessionResponse = {
   uploadUrl: string;
@@ -83,6 +84,19 @@ async function api<T>(path: string, options: RequestInit = {}, sessionToken?: st
       ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
       ...options.headers,
     },
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(data?.message ?? "Ошибка запроса");
+  return data as T;
+}
+
+async function apiForm<T>(path: string, body: FormData, sessionToken?: string | null): Promise<T> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: {
+      ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+    },
+    body,
   });
   const data = await response.json().catch(() => null);
   if (!response.ok) throw new Error(data?.message ?? "Ошибка запроса");
@@ -562,10 +576,6 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
             <HomeworkUploadScreen
               isAdmin={isAdmin && Boolean(sessionToken)}
               sessionToken={sessionToken}
-              onBack={() => {
-                hapticSelection();
-                runWithViewTransition(() => setActiveScreen("leaderboard"));
-              }}
             />
           ) : (
             <>
@@ -630,16 +640,14 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
             activeScreen={activeScreen}
             onLeaderboard={() => {
               hapticSelection();
-              runWithViewTransition(() => setActiveScreen("leaderboard"));
+              setActiveScreen("leaderboard");
             }}
             onHomework={() => {
               hapticImpact("light");
-              runWithViewTransition(() => {
-                setActiveScreen("homeworkUpload");
-                setShowAdminPanel(false);
-                setBulkEditMode(false);
-                setExpandedStudentId(null);
-              });
+              setActiveScreen("homeworkUpload");
+              setShowAdminPanel(false);
+              setBulkEditMode(false);
+              setExpandedStudentId(null);
             }}
           />
         </>
@@ -651,13 +659,12 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
 function HomeworkUploadScreen({
   isAdmin,
   sessionToken,
-  onBack,
 }: {
   isAdmin: boolean;
   sessionToken: string | null;
-  onBack: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const homeworkInputRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -667,6 +674,15 @@ function HomeworkUploadScreen({
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const busy = phase === "creating" || phase === "uploading";
+  const [homeworkFile, setHomeworkFile] = useState<File | null>(null);
+  const [homeworkLinks, setHomeworkLinks] = useState("");
+  const [homeworkDescription, setHomeworkDescription] = useState("");
+  const [homeworkExtra, setHomeworkExtra] = useState("");
+  const [homeworkDragActive, setHomeworkDragActive] = useState(false);
+  const [homeworkPhase, setHomeworkPhase] = useState<HomeworkSubmitPhase>("idle");
+  const [homeworkMessage, setHomeworkMessage] = useState<string | null>(null);
+  const homeworkBusy = homeworkPhase === "submitting";
+  const hasHomeworkContent = Boolean(homeworkLinks.trim() || homeworkDescription.trim() || homeworkExtra.trim() || homeworkFile);
 
   const selectFile = (nextFile: File | null) => {
     if (!nextFile) return;
@@ -713,35 +729,131 @@ function HomeworkUploadScreen({
     }
   };
 
+  const selectHomeworkFile = (nextFile: File | null) => {
+    if (!nextFile) return;
+    setHomeworkFile(nextFile);
+    setHomeworkMessage(null);
+    setHomeworkPhase("idle");
+  };
+
+  const submitHomework = async () => {
+    if (!sessionToken || homeworkBusy || !hasHomeworkContent) return;
+    setHomeworkPhase("submitting");
+    setHomeworkMessage(null);
+    try {
+      const form = new FormData();
+      form.set("links", homeworkLinks.trim());
+      form.set("description", homeworkDescription.trim());
+      form.set("extra", homeworkExtra.trim());
+      if (homeworkFile) form.set("file", homeworkFile);
+      const result = await apiForm<HomeworkSubmitResponse>("/api/homework/submit", form, sessionToken);
+      setHomeworkLinks("");
+      setHomeworkDescription("");
+      setHomeworkExtra("");
+      setHomeworkFile(null);
+      setHomeworkPhase("done");
+      setHomeworkMessage(result.fileName ? `ДЗ отправлено: ${result.fileName}` : "ДЗ отправлено");
+      hapticNotice("success");
+    } catch (caught) {
+      setHomeworkPhase("error");
+      setHomeworkMessage(caught instanceof Error ? caught.message : "Не удалось отправить ДЗ");
+      hapticNotice("error");
+    }
+  };
+
   if (!isAdmin || !sessionToken) {
     return (
       <section className="uploadScreen">
-        <div className="uploadHeader">
-          <button type="button" className="uploadBack" onClick={onBack}>←</button>
-          <div>
-            <span>ДЗ видео</span>
-            <strong>Только для преподавателя</strong>
+        <form className="uploadCard homeworkCard" onSubmit={(event) => {
+          event.preventDefault();
+          void submitHomework();
+        }}>
+          {!sessionToken && (
+            <p className="uploadMessage error">
+              Открой через Telegram, чтобы ДЗ привязалось к твоему профилю.
+            </p>
+          )}
+
+          <label className="uploadField">
+            <span>Ссылки</span>
+            <input
+              value={homeworkLinks}
+              disabled={homeworkBusy}
+              maxLength={5000}
+              placeholder="GitHub, сайт, видео или другая ссылка"
+              onChange={(event) => setHomeworkLinks(event.target.value)}
+            />
+          </label>
+
+          <label className="uploadField">
+            <span>Описание</span>
+            <textarea
+              value={homeworkDescription}
+              disabled={homeworkBusy}
+              maxLength={5000}
+              placeholder="Что именно ты сдаёшь и что нужно проверить"
+              onChange={(event) => setHomeworkDescription(event.target.value)}
+            />
+          </label>
+
+          <label className="uploadField">
+            <span>Дополнить от себя</span>
+            <textarea
+              className="compactTextarea"
+              value={homeworkExtra}
+              disabled={homeworkBusy}
+              maxLength={5000}
+              placeholder="Комменты, вопросы, что не получилось"
+              onChange={(event) => setHomeworkExtra(event.target.value)}
+            />
+          </label>
+
+          <label
+            className={`dropZone homeworkDrop ${homeworkDragActive ? "active" : ""} ${homeworkFile ? "hasFile" : ""}`}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setHomeworkDragActive(true);
+            }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setHomeworkDragActive(true);
+            }}
+            onDragLeave={() => setHomeworkDragActive(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setHomeworkDragActive(false);
+              selectHomeworkFile(event.dataTransfer.files.item(0));
+            }}
+          >
+            <input
+              ref={homeworkInputRef}
+              type="file"
+              disabled={homeworkBusy}
+              onChange={(event) => selectHomeworkFile(event.target.files?.item(0) ?? null)}
+            />
+            <span className="dropIcon">↑</span>
+            <strong>{homeworkFile ? homeworkFile.name : "Файл домашки"}</strong>
+            <small>{homeworkFile ? formatBytes(homeworkFile.size) : "нажми или перетащи markdown, pdf, zip, фото, видео"}</small>
+          </label>
+
+          {homeworkMessage && <p className={`uploadMessage ${homeworkPhase === "error" ? "error" : "success"}`}>{homeworkMessage}</p>}
+
+          <div className="uploadActions">
+            <button type="button" className="uploadSecondary" disabled={homeworkBusy} onClick={() => homeworkInputRef.current?.click()}>
+              Выбрать файл
+            </button>
+            <button type="submit" className="uploadPrimary" disabled={homeworkBusy || !sessionToken || !hasHomeworkContent}>
+              {homeworkBusy ? "Отправляю..." : "Отправить"}
+            </button>
           </div>
-        </div>
-        <div className="uploadCard setupNotice">
-          <strong>Открой через Telegram-аккаунт админа</strong>
-          <p>Загрузка видео в YouTube доступна только преподавателю. В обычном браузере без Telegram-сессии этот экран закрыт.</p>
-        </div>
+        </form>
       </section>
     );
   }
 
   return (
     <section className="uploadScreen">
-      <div className="uploadHeader">
-        <button type="button" className="uploadBack" onClick={onBack}>←</button>
-        <div>
-          <span>YouTube · ДЗ</span>
-          <strong>Загрузить урок</strong>
-        </div>
-      </div>
-
-      <form className="uploadCard" onSubmit={(event) => {
+      <form className="uploadCard teacherUploadCard" onSubmit={(event) => {
         event.preventDefault();
         void submitUpload();
       }}>

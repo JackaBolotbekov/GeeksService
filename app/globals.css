@@ -927,60 +927,6 @@ button:disabled {
   animation: panelIn 180ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
 
-.uploadHeader {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.uploadBack {
-  width: 42px;
-  height: 42px;
-  flex: 0 0 auto;
-  border: 2px solid #11131b;
-  border-radius: 14px;
-  background: var(--yellow);
-  color: var(--ink);
-  font-size: 24px;
-  font-weight: 950;
-  line-height: 1;
-  box-shadow: 3px 3px 0 #11131b;
-  transition: transform 140ms ease, box-shadow 140ms ease;
-}
-
-.uploadBack:active {
-  transform: translateY(1px) scale(0.97);
-  box-shadow: 1px 1px 0 #11131b;
-}
-
-.uploadHeader div {
-  min-width: 0;
-}
-
-.uploadHeader span {
-  display: block;
-  color: var(--yellow);
-  font-size: 12px;
-  font-weight: 950;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-
-.uploadHeader strong {
-  display: block;
-  margin-top: 2px;
-  overflow: hidden;
-  color: white;
-  font-size: clamp(30px, 8vw, 58px);
-  font-weight: 950;
-  letter-spacing: -0.08em;
-  line-height: 0.95;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
 .uploadCard {
   display: grid;
   gap: 12px;
@@ -995,21 +941,27 @@ button:disabled {
     0 24px 48px rgba(0, 0, 0, 0.22);
 }
 
-.setupNotice {
-  color: white;
+.homeworkCard {
+  gap: 10px;
 }
 
-.setupNotice strong {
-  color: var(--yellow);
-  font-size: 22px;
-  font-weight: 950;
+.homeworkCard .uploadField textarea {
+  min-height: clamp(96px, 16svh, 140px);
 }
 
-.setupNotice p {
-  margin: 0;
-  color: #d8dbe3;
-  font-size: 16px;
-  line-height: 1.35;
+.homeworkCard .compactTextarea {
+  min-height: 76px;
+}
+
+.homeworkDrop {
+  min-height: clamp(118px, 19svh, 156px);
+}
+
+.homeworkDrop .dropIcon {
+  width: 56px;
+  height: 56px;
+  margin-bottom: 7px;
+  font-size: 34px;
 }
 
 .dropZone {
@@ -1308,7 +1260,7 @@ button:disabled {
 }
 
 .bottomNavButton.active,
-.bottomNavPrimary {
+.bottomNavPrimary.active {
   background: linear-gradient(180deg, #fff078 0%, var(--yellow) 62%, #f2c900 100%);
 }
 

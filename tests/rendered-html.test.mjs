@@ -50,6 +50,12 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /navIconHomework/);
   assert.match(app, /uploadArrow/);
   assert.match(app, /HomeworkUploadScreen/);
+  assert.match(app, /apiForm<HomeworkSubmitResponse>/);
+  assert.match(app, /\/api\/homework\/submit/);
+  assert.match(app, /homeworkCard/);
+  assert.match(app, /homeworkDrop/);
+  assert.match(app, /Файл домашки/);
+  assert.match(app, /Открой через Telegram, чтобы ДЗ привязалось/);
   assert.match(app, /uploadFileToYouTube/);
   assert.match(app, /uploadYouTubeChunkWithRetry/);
   assert.match(app, /isRetriableUploadError/);
@@ -57,6 +63,10 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /Content-Range/);
   assert.match(app, /\/api\/admin\/youtube\/upload-session/);
   assert.match(app, /activeScreen === "homeworkUpload"/);
+  assert.doesNotMatch(app, /runWithViewTransition\(\(\) => setActiveScreen/);
+  assert.doesNotMatch(app, /uploadHeader/);
+  assert.doesNotMatch(app, /uploadBack/);
+  assert.doesNotMatch(app, /setupNotice/);
   assert.match(app, /<strong>\{cell\.score \?\? cell\.lessonNumber\}<\/strong>/);
   assert.doesNotMatch(app, /<span>\{cell\.lessonNumber\}<\/span>/);
   assert.doesNotMatch(app, /<small>\{cell\.lessonNumber\}<\/small>/);
@@ -114,10 +124,17 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.bottomNav\s*{[^}]*pointer-events:\s*none/s);
   assert.match(css, /\.bottomNav::before\s*{[^}]*content:\s*none/s);
   assert.match(css, /\.bottomNavButton\s*{[^}]*pointer-events:\s*auto/s);
+  assert.match(css, /\.bottomNavButton\.active,\s*\.bottomNavPrimary\.active\s*{/s);
+  assert.doesNotMatch(css, /\.bottomNavButton\.active,\s*\.bottomNavPrimary\s*{/s);
   assert.match(css, /\.bottomNavPrimary\s*{[^}]*border-radius:\s*999px/s);
   assert.match(css, /\.uploadArrow::before\s*{[^}]*height:\s*15px/s);
   assert.match(css, /\.uploadArrow::after\s*{[^}]*border-bottom:\s*14px solid #11131b/s);
   assert.match(css, /\.uploadScreen\s*{[^}]*padding:\s*2px 0 112px/s);
+  assert.match(css, /\.homeworkCard\s*{[^}]*gap:\s*10px/s);
+  assert.match(css, /\.homeworkDrop\s*{[^}]*min-height:\s*clamp\(118px,\s*19svh,\s*156px\)/s);
+  assert.doesNotMatch(css, /\.uploadHeader/);
+  assert.doesNotMatch(css, /\.uploadBack/);
+  assert.doesNotMatch(css, /\.setupNotice/);
   assert.match(css, /\.dropZone\s*{[^}]*border:\s*3px dashed/s);
   assert.match(css, /\.uploadProgress span\s*{[^}]*transition:\s*width 180ms ease/s);
   assert.match(css, /input,\s*select,\s*textarea\s*{[^}]*font-size:\s*16px/s);
@@ -163,8 +180,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /добавить ученика/);
 });
 
-test("includes leaderboard and admin API surfaces", async () => {
-  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, store] = await Promise.all([
+test("includes leaderboard, homework, and admin API surfaces", async () => {
+  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, homeworkRoute, homeworkStore, hosting, store] = await Promise.all([
     readFile(new URL("../app/api/leaderboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/[studentId]/route.ts", import.meta.url), "utf8"),
@@ -172,6 +189,9 @@ test("includes leaderboard and admin API surfaces", async () => {
     readFile(new URL("../app/api/admin/import-railway/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/avatar/[studentId]/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/youtube/upload-session/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/homework/submit/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/homework.ts", import.meta.url), "utf8"),
+    readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../lib/store.ts", import.meta.url), "utf8"),
   ]);
 
@@ -189,6 +209,15 @@ test("includes leaderboard and admin API surfaces", async () => {
   assert.match(youtubeUploadRoute, /uploadType=resumable/);
   assert.match(youtubeUploadRoute, /X-Upload-Content-Length/);
   assert.match(youtubeUploadRoute, /selfDeclaredMadeForKids:\s*false/);
+  assert.match(homeworkRoute, /requireIdentity/);
+  assert.match(homeworkRoute, /request\.formData/);
+  assert.match(homeworkRoute, /findByTelegramUserId/);
+  assert.match(homeworkRoute, /createHomeworkSubmission/);
+  assert.match(homeworkStore, /homework_submissions/);
+  assert.match(homeworkStore, /HOMEWORK_FILES/);
+  assert.match(homeworkStore, /bucket\.put/);
+  assert.match(homeworkStore, /MAX_FILE_SIZE = 50 \* 1024 \* 1024/);
+  assert.match(hosting, /"r2":\s*"HOMEWORK_FILES"/);
   assert.match(store, /SET telegram_username = \?, avatar_url = COALESCE/);
   assert.match(store, /findAvatarSourceByStudentId/);
   assert.match(store, /\/api\/avatar\/\$\{row\.id\}/);

@@ -55,3 +55,9 @@ export interface AdminStudentsResponse {
   students: StudentView[];
   pendingStudents: StudentView[];
 }
+
+export interface HomeworkSubmitResponse {
+  ok: boolean;
+  submissionId: string;
+  fileName: string | null;
+}
