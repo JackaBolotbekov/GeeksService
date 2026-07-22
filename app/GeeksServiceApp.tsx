@@ -311,9 +311,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
 
   const toggleStudent = (studentId: string) => {
     hapticSelection();
-    runWithViewTransition(() => {
-      setExpandedStudentId((current) => current === studentId ? null : studentId);
-    });
+    setExpandedStudentId((current) => current === studentId ? null : studentId);
   };
 
   const updateStudentOnServer = async (student: StudentView, patch: StudentPatch, token: string): Promise<AdminStudentsResponse> => {
@@ -746,13 +744,11 @@ function Leaderboard({
                         disabled={Boolean(savingKey) || !isAdmin}
                         onClick={() => {
                           hapticSelection();
-                          runWithViewTransition(() => {
-                            setActiveLesson((current) =>
-                              current?.studentId === student.id && current.lessonNumber === cell.lessonNumber
-                                ? null
-                                : { studentId: student.id, lessonNumber: cell.lessonNumber },
-                            );
-                          });
+                          setActiveLesson((current) =>
+                            current?.studentId === student.id && current.lessonNumber === cell.lessonNumber
+                              ? null
+                              : { studentId: student.id, lessonNumber: cell.lessonNumber },
+                          );
                         }}
                       >
                         <strong>{cell.score ?? cell.lessonNumber}</strong>
