@@ -1722,7 +1722,7 @@ function BottomNav({
       <button
         type="button"
         className={`bottomNavButton bottomNavPrimary ${homeworkActive ? "active" : ""} ${canOpenHomework ? "" : "locked"}`}
-        aria-label={canOpenHomework ? "Отправить ДЗ" : "ДЗ доступно только ученикам группы"}
+        aria-label={canOpenHomework ? "Отправить ДЗ" : "Geeks"}
         aria-current={homeworkActive ? "page" : undefined}
         aria-disabled={!canOpenHomework}
         onClick={() => {
