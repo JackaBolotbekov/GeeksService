@@ -92,6 +92,27 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 - `npm test`: build the starter and verify its rendered loading skeleton
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 
+## YouTube Homework Upload
+
+The center `ДЗ` button opens the teacher-only upload screen. The app does not
+proxy large video files through Sites. It creates a YouTube resumable upload
+session on the server, then the browser uploads the video directly to YouTube in
+chunks.
+
+Required production env:
+
+- `YOUTUBE_CLIENT_ID`
+- `YOUTUBE_CLIENT_SECRET`
+- `YOUTUBE_REFRESH_TOKEN`
+
+Optional env:
+
+- `YOUTUBE_CATEGORY_ID`, default `27` for Education.
+
+The OAuth refresh token must be created for the YouTube channel that should
+receive uploads, with the `https://www.googleapis.com/auth/youtube.upload`
+scope. Uploaded homework videos default to `unlisted`.
+
 ## Learn More
 
 - [vinext Documentation](https://github.com/cloudflare/vinext)

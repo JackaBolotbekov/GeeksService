@@ -49,6 +49,14 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /BottomNav/);
   assert.match(app, /navIconHomework/);
   assert.match(app, /uploadArrow/);
+  assert.match(app, /HomeworkUploadScreen/);
+  assert.match(app, /uploadFileToYouTube/);
+  assert.match(app, /uploadYouTubeChunkWithRetry/);
+  assert.match(app, /isRetriableUploadError/);
+  assert.match(app, /VIDEO_CHUNK_SIZE = 16 \* 1024 \* 1024/);
+  assert.match(app, /Content-Range/);
+  assert.match(app, /\/api\/admin\/youtube\/upload-session/);
+  assert.match(app, /activeScreen === "homeworkUpload"/);
   assert.match(app, /<strong>\{cell\.score \?\? cell\.lessonNumber\}<\/strong>/);
   assert.doesNotMatch(app, /<span>\{cell\.lessonNumber\}<\/span>/);
   assert.doesNotMatch(app, /<small>\{cell\.lessonNumber\}<\/small>/);
@@ -108,6 +116,9 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.bottomNavPrimary\s*{[^}]*border-radius:\s*999px/s);
   assert.match(css, /\.uploadArrow::before\s*{[^}]*height:\s*15px/s);
   assert.match(css, /\.uploadArrow::after\s*{[^}]*border-bottom:\s*14px solid #11131b/s);
+  assert.match(css, /\.uploadScreen\s*{[^}]*padding:\s*2px 0 112px/s);
+  assert.match(css, /\.dropZone\s*{[^}]*border:\s*3px dashed/s);
+  assert.match(css, /\.uploadProgress span\s*{[^}]*transition:\s*width 180ms ease/s);
   assert.match(css, /input,\s*select,\s*textarea\s*{[^}]*font-size:\s*16px/s);
   assert.match(css, /html,\s*body\s*{[^}]*overflow-y:\s*hidden/s);
   assert.match(css, /html,\s*body\s*{[^}]*touch-action:\s*auto/s);
@@ -150,13 +161,14 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
 });
 
 test("includes leaderboard and admin API surfaces", async () => {
-  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, store] = await Promise.all([
+  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, store] = await Promise.all([
     readFile(new URL("../app/api/leaderboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/[studentId]/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/auth/telegram/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/import-railway/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/avatar/[studentId]/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/youtube/upload-session/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/store.ts", import.meta.url), "utf8"),
   ]);
 
@@ -167,6 +179,13 @@ test("includes leaderboard and admin API surfaces", async () => {
   assert.match(importRoute, /importStudentsSnapshot/);
   assert.match(avatarRoute, /getUserProfilePhotos/);
   assert.match(avatarRoute, /getFile/);
+  assert.match(youtubeUploadRoute, /requireAdmin/);
+  assert.match(youtubeUploadRoute, /YOUTUBE_CLIENT_ID/);
+  assert.match(youtubeUploadRoute, /YOUTUBE_CLIENT_SECRET/);
+  assert.match(youtubeUploadRoute, /YOUTUBE_REFRESH_TOKEN/);
+  assert.match(youtubeUploadRoute, /uploadType=resumable/);
+  assert.match(youtubeUploadRoute, /X-Upload-Content-Length/);
+  assert.match(youtubeUploadRoute, /selfDeclaredMadeForKids:\s*false/);
   assert.match(store, /SET telegram_username = \?, avatar_url = COALESCE/);
   assert.match(store, /findAvatarSourceByStudentId/);
   assert.match(store, /\/api\/avatar\/\$\{row\.id\}/);

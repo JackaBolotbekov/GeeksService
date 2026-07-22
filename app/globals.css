@@ -920,6 +920,338 @@ button:disabled {
   background: #ffb3b3;
 }
 
+.uploadScreen {
+  display: grid;
+  gap: 10px;
+  padding: 2px 0 112px;
+  animation: panelIn 180ms cubic-bezier(0.2, 0.9, 0.2, 1);
+}
+
+.uploadHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.uploadBack {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  border: 2px solid #11131b;
+  border-radius: 14px;
+  background: var(--yellow);
+  color: var(--ink);
+  font-size: 24px;
+  font-weight: 950;
+  line-height: 1;
+  box-shadow: 3px 3px 0 #11131b;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.uploadBack:active {
+  transform: translateY(1px) scale(0.97);
+  box-shadow: 1px 1px 0 #11131b;
+}
+
+.uploadHeader div {
+  min-width: 0;
+}
+
+.uploadHeader span {
+  display: block;
+  color: var(--yellow);
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.uploadHeader strong {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  color: white;
+  font-size: clamp(30px, 8vw, 58px);
+  font-weight: 950;
+  letter-spacing: -0.08em;
+  line-height: 0.95;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.uploadCard {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  padding: clamp(12px, 3vw, 18px);
+  border: 3px solid #11131b;
+  border-radius: 26px;
+  background: rgba(17, 19, 27, 0.84);
+  box-shadow:
+    6px 6px 0 var(--yellow),
+    0 24px 48px rgba(0, 0, 0, 0.22);
+}
+
+.setupNotice {
+  color: white;
+}
+
+.setupNotice strong {
+  color: var(--yellow);
+  font-size: 22px;
+  font-weight: 950;
+}
+
+.setupNotice p {
+  margin: 0;
+  color: #d8dbe3;
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.dropZone {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: clamp(172px, 34svh, 290px);
+  padding: clamp(18px, 4vw, 26px);
+  border: 3px dashed rgba(255, 223, 38, 0.54);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(255, 223, 38, 0.18), transparent 42%),
+    #20222b;
+  color: white;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.dropZone input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.dropZone.active,
+.dropZone.hasFile {
+  border-color: var(--yellow);
+  background:
+    radial-gradient(circle at 50% 28%, rgba(255, 223, 38, 0.25), transparent 42%),
+    #252734;
+  box-shadow: inset 0 0 0 2px rgba(255, 223, 38, 0.14);
+}
+
+.dropZone.active {
+  transform: translateY(-1px) scale(1.005);
+}
+
+.dropIcon {
+  width: 68px;
+  height: 68px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 10px;
+  border: 3px solid #11131b;
+  border-radius: 999px;
+  background: var(--yellow);
+  color: var(--ink);
+  font-size: 42px;
+  font-weight: 950;
+  line-height: 1;
+  box-shadow: 4px 4px 0 #11131b;
+}
+
+.dropZone strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: white;
+  font-size: clamp(20px, 5vw, 28px);
+  font-weight: 950;
+  line-height: 1.08;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dropZone small {
+  display: block;
+  max-width: 100%;
+  margin-top: 7px;
+  overflow: hidden;
+  color: #c5c9d2;
+  font-size: 14px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uploadField {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.uploadField span {
+  color: var(--yellow);
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.uploadField input,
+.uploadField textarea {
+  width: 100%;
+  min-width: 0;
+  border: 2px solid #11131b;
+  border-radius: 17px;
+  background: #f4f1e8;
+  color: var(--ink);
+  caret-color: var(--ink);
+  outline: none;
+  font-weight: 900;
+  box-shadow: inset 0 -3px 0 rgba(17, 19, 27, 0.08);
+  transition:
+    border-color 140ms ease,
+    box-shadow 140ms ease,
+    background 140ms ease;
+}
+
+.uploadField input {
+  height: 52px;
+  padding: 0 14px;
+}
+
+.uploadField textarea {
+  min-height: clamp(132px, 24svh, 220px);
+  padding: 14px;
+  line-height: 1.35;
+  resize: vertical;
+}
+
+.uploadField input:focus,
+.uploadField textarea:focus {
+  border-color: var(--yellow);
+  background: #fffdf6;
+  box-shadow:
+    0 0 0 4px rgba(255, 223, 38, 0.18),
+    inset 0 -3px 0 rgba(17, 19, 27, 0.08);
+}
+
+.uploadMeta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: #c9ccd5;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.uploadProgress {
+  position: relative;
+  height: 42px;
+  overflow: hidden;
+  border: 2px solid #11131b;
+  border-radius: 16px;
+  background: #2b2e38;
+}
+
+.uploadProgress span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  min-width: 8%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--yellow), #fff078);
+  transition: width 180ms ease;
+}
+
+.uploadProgress strong {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  height: 100%;
+  place-items: center;
+  color: white;
+  font-size: 15px;
+  font-weight: 950;
+  text-shadow: 0 1px 0 #11131b;
+}
+
+.uploadMessage {
+  margin: 0;
+  border: 2px solid #11131b;
+  border-radius: 16px;
+  padding: 12px;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.uploadMessage.error {
+  background: #ffb3b3;
+  color: #341010;
+}
+
+.uploadMessage.success {
+  background: #d8ffd9;
+  color: #123117;
+}
+
+.uploadMessage a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.uploadActions {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 8px;
+}
+
+.uploadSecondary,
+.uploadPrimary {
+  min-width: 0;
+  height: 52px;
+  border: 2px solid #11131b;
+  border-radius: 17px;
+  font-weight: 950;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    opacity 140ms ease,
+    filter 140ms ease;
+}
+
+.uploadSecondary {
+  background: #f4f1e8;
+  color: var(--ink);
+  box-shadow: 3px 3px 0 #11131b;
+}
+
+.uploadPrimary {
+  background: var(--yellow);
+  color: var(--ink);
+  box-shadow: 4px 4px 0 #11131b;
+}
+
+.uploadSecondary:not(:disabled):active,
+.uploadPrimary:not(:disabled):active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 1px 1px 0 #11131b;
+}
+
+.uploadSecondary:disabled,
+.uploadPrimary:disabled {
+  opacity: 0.58;
+}
+
 .bottomNav {
   position: fixed;
   left: 50%;

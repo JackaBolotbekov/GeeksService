@@ -15,6 +15,15 @@ declare global {
 }
 
 type LoadState = "loading" | "ready" | "error";
+type ActiveScreen = "leaderboard" | "homeworkUpload";
+type UploadPhase = "idle" | "creating" | "uploading" | "done" | "error";
+
+type YouTubeUploadSessionResponse = {
+  uploadUrl: string;
+  accessToken: string;
+  expiresIn: number;
+  privacyStatus: "private" | "public" | "unlisted";
+};
 
 type TelegramWebApp = {
   initData?: string;
@@ -52,6 +61,19 @@ type StudentChange = {
 };
 
 type EditField = keyof StudentDraft;
+
+type UploadChunkInput = {
+  uploadUrl: string;
+  accessToken: string;
+  chunk: Blob;
+  start: number;
+  end: number;
+  total: number;
+  mimeType: string;
+  onProgress: (loaded: number) => void;
+};
+
+const VIDEO_CHUNK_SIZE = 16 * 1024 * 1024;
 
 async function api<T>(path: string, options: RequestInit = {}, sessionToken?: string): Promise<T> {
   const response = await fetch(path, {
@@ -108,6 +130,130 @@ function hapticImpact(style: "light" | "medium" | "heavy" | "rigid" | "soft" = "
 
 function hapticNotice(type: "error" | "success" | "warning") {
   window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.(type);
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 MB";
+  const units = ["B", "KB", "MB", "GB"] as const;
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function fileTitle(file: File): string {
+  return file.name.replace(/\.[^.]+$/, "").trim();
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function uploadFileToYouTube({
+  file,
+  uploadUrl,
+  accessToken,
+  onProgress,
+}: {
+  file: File;
+  uploadUrl: string;
+  accessToken: string;
+  onProgress: (progress: number) => void;
+}): Promise<string> {
+  if (file.size <= 0) throw new Error("Видео пустое");
+
+  let offset = 0;
+  let videoId: string | null = null;
+  while (offset < file.size) {
+    const end = Math.min(offset + VIDEO_CHUNK_SIZE, file.size);
+    const chunk = file.slice(offset, end, file.type || "application/octet-stream");
+    const result = await uploadYouTubeChunkWithRetry({
+      uploadUrl,
+      accessToken,
+      chunk,
+      start: offset,
+      end,
+      total: file.size,
+      mimeType: file.type || "application/octet-stream",
+      onProgress: (loaded) => onProgress(Math.min(99, Math.round(((offset + loaded) / file.size) * 100))),
+    });
+    offset = end;
+    if (result.videoId) videoId = result.videoId;
+  }
+
+  onProgress(100);
+  if (!videoId) throw new Error("YouTube не вернул ID видео");
+  return videoId;
+}
+
+async function uploadYouTubeChunkWithRetry(input: UploadChunkInput): Promise<{ videoId: string | null }> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await uploadYouTubeChunk(input);
+    } catch (error) {
+      lastError = error;
+      if (!isRetriableUploadError(error) || attempt === 2) break;
+      await sleep(700 * 2 ** attempt);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Не удалось загрузить видео в YouTube");
+}
+
+function isRetriableUploadError(error: unknown): boolean {
+  const status = typeof error === "object" && error !== null && "status" in error
+    ? Number((error as { status?: number }).status)
+    : 0;
+  return status === 0 || [500, 502, 503, 504].includes(status);
+}
+
+function uploadYouTubeChunk({
+  uploadUrl,
+  accessToken,
+  chunk,
+  start,
+  end,
+  total,
+  mimeType,
+  onProgress,
+}: UploadChunkInput): Promise<{ videoId: string | null }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl);
+    xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+    xhr.setRequestHeader("Content-Type", mimeType);
+    xhr.setRequestHeader("Content-Range", `bytes ${start}-${end - 1}/${total}`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded);
+    };
+    xhr.onerror = () => {
+      const error = new Error("Не удалось загрузить кусок видео в YouTube") as Error & { status: number };
+      error.status = 0;
+      reject(error);
+    };
+    xhr.onload = () => {
+      if (xhr.status === 308) {
+        resolve({ videoId: null });
+        return;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText || "{}") as { id?: string };
+          resolve({ videoId: data.id ?? null });
+        } catch {
+          reject(new Error("YouTube вернул некорректный ответ после загрузки"));
+        }
+        return;
+      }
+      const error = new Error(`YouTube upload error ${xhr.status}`) as Error & { status: number };
+      error.status = xhr.status;
+      reject(error);
+    };
+    xhr.send(chunk);
+  });
 }
 
 function useLockedViewportZoom() {
@@ -283,6 +429,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [bulkEditMode, setBulkEditMode] = useState(false);
+  const [activeScreen, setActiveScreen] = useState<ActiveScreen>("leaderboard");
   const leaderboardRef = useRef(leaderboard);
 
   useEffect(() => {
@@ -411,65 +558,273 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
 
       {state === "ready" && (
         <>
-          {isAdmin && sessionToken && showAdminPanel && (
-            <AdminPanel
+          {activeScreen === "homeworkUpload" ? (
+            <HomeworkUploadScreen
+              isAdmin={isAdmin && Boolean(sessionToken)}
               sessionToken={sessionToken}
-              onChange={applyAdminResponse}
+              onBack={() => {
+                hapticSelection();
+                runWithViewTransition(() => setActiveScreen("leaderboard"));
+              }}
             />
+          ) : (
+            <>
+              {isAdmin && sessionToken && showAdminPanel && (
+                <AdminPanel
+                  sessionToken={sessionToken}
+                  onChange={applyAdminResponse}
+                />
+              )}
+              <Leaderboard
+                key={bulkEditMode ? "bulk-edit" : "score-view"}
+                students={leaderboard}
+                isAdmin={isAdmin && Boolean(sessionToken)}
+                expandedStudentId={expandedStudentId}
+                bulkEditMode={bulkEditMode}
+                onBulkEditClose={() => {
+                  runWithViewTransition(() => {
+                    setBulkEditMode(false);
+                  });
+                }}
+                onToggleStudent={toggleStudent}
+                onScoreChange={async (student, lessonNumber, score) => {
+                  if (!sessionToken) return;
+                  const previous = leaderboardRef.current;
+                  setLeaderboardSmooth((current) => withScore(current, student.id, lessonNumber, score));
+                  try {
+                    const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}/scores/${lessonNumber}`, {
+                      method: "PUT",
+                      body: JSON.stringify({ score }),
+                    }, sessionToken);
+                    applyAdminResponse(response);
+                  } catch (caught) {
+                    setLeaderboardSmooth(previous);
+                    throw caught;
+                  }
+                }}
+                onBulkStudentChange={async (changes) => {
+                  if (!sessionToken || changes.length === 0) return;
+                  const previous = leaderboardRef.current;
+                  setLeaderboardSmooth((current) => {
+                    const patchesById = new Map(changes.map((change) => [change.student.id, change.patch]));
+                    return rankVisibleStudents(current.map((item) => {
+                      const patch = patchesById.get(item.id);
+                      return patch ? mergeStudentPatch(item, patch) : item;
+                    }));
+                  });
+                  try {
+                    let latest: AdminStudentsResponse | null = null;
+                    for (const change of changes) {
+                      latest = await updateStudentOnServer(change.student, change.patch, sessionToken);
+                    }
+                    if (latest) applyAdminResponse(latest);
+                  } catch (caught) {
+                    setLeaderboardSmooth(previous);
+                    throw caught;
+                  }
+                }}
+              />
+            </>
           )}
-          <Leaderboard
-            key={bulkEditMode ? "bulk-edit" : "score-view"}
-            students={leaderboard}
-            isAdmin={isAdmin && Boolean(sessionToken)}
-            expandedStudentId={expandedStudentId}
-            bulkEditMode={bulkEditMode}
-            onBulkEditClose={() => {
+          <BottomNav
+            activeScreen={activeScreen}
+            onLeaderboard={() => {
+              hapticSelection();
+              runWithViewTransition(() => setActiveScreen("leaderboard"));
+            }}
+            onHomework={() => {
+              hapticImpact("light");
               runWithViewTransition(() => {
+                setActiveScreen("homeworkUpload");
+                setShowAdminPanel(false);
                 setBulkEditMode(false);
+                setExpandedStudentId(null);
               });
-            }}
-            onToggleStudent={toggleStudent}
-            onScoreChange={async (student, lessonNumber, score) => {
-              if (!sessionToken) return;
-              const previous = leaderboardRef.current;
-              setLeaderboardSmooth((current) => withScore(current, student.id, lessonNumber, score));
-              try {
-                const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}/scores/${lessonNumber}`, {
-                  method: "PUT",
-                  body: JSON.stringify({ score }),
-                }, sessionToken);
-                applyAdminResponse(response);
-              } catch (caught) {
-                setLeaderboardSmooth(previous);
-                throw caught;
-              }
-            }}
-            onBulkStudentChange={async (changes) => {
-              if (!sessionToken || changes.length === 0) return;
-              const previous = leaderboardRef.current;
-              setLeaderboardSmooth((current) => {
-                const patchesById = new Map(changes.map((change) => [change.student.id, change.patch]));
-                return rankVisibleStudents(current.map((item) => {
-                  const patch = patchesById.get(item.id);
-                  return patch ? mergeStudentPatch(item, patch) : item;
-                }));
-              });
-              try {
-                let latest: AdminStudentsResponse | null = null;
-                for (const change of changes) {
-                  latest = await updateStudentOnServer(change.student, change.patch, sessionToken);
-                }
-                if (latest) applyAdminResponse(latest);
-              } catch (caught) {
-                setLeaderboardSmooth(previous);
-                throw caught;
-              }
             }}
           />
-          <BottomNav />
         </>
       )}
     </main>
+  );
+}
+
+function HomeworkUploadScreen({
+  isAdmin,
+  sessionToken,
+  onBack,
+}: {
+  isAdmin: boolean;
+  sessionToken: string | null;
+  onBack: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [dragActive, setDragActive] = useState(false);
+  const [phase, setPhase] = useState<UploadPhase>("idle");
+  const [progress, setProgress] = useState(0);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const busy = phase === "creating" || phase === "uploading";
+
+  const selectFile = (nextFile: File | null) => {
+    if (!nextFile) return;
+    setFile(nextFile);
+    setResultUrl(null);
+    setUploadError(null);
+    setProgress(0);
+    if (!title.trim()) setTitle(fileTitle(nextFile));
+  };
+
+  const submitUpload = async () => {
+    if (!isAdmin || !sessionToken || !file || !title.trim() || busy) return;
+    setUploadError(null);
+    setResultUrl(null);
+    setProgress(0);
+    setPhase("creating");
+    try {
+      const session = await api<YouTubeUploadSessionResponse>("/api/admin/youtube/upload-session", {
+        method: "POST",
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim(),
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type || "application/octet-stream",
+          privacyStatus: "unlisted",
+        }),
+      }, sessionToken);
+
+      setPhase("uploading");
+      const videoId = await uploadFileToYouTube({
+        file,
+        uploadUrl: session.uploadUrl,
+        accessToken: session.accessToken,
+        onProgress: setProgress,
+      });
+      setResultUrl(`https://youtu.be/${videoId}`);
+      setPhase("done");
+      hapticNotice("success");
+    } catch (caught) {
+      setUploadError(caught instanceof Error ? caught.message : "Не удалось загрузить видео");
+      setPhase("error");
+      hapticNotice("error");
+    }
+  };
+
+  if (!isAdmin || !sessionToken) {
+    return (
+      <section className="uploadScreen">
+        <div className="uploadHeader">
+          <button type="button" className="uploadBack" onClick={onBack}>←</button>
+          <div>
+            <span>ДЗ видео</span>
+            <strong>Только для преподавателя</strong>
+          </div>
+        </div>
+        <div className="uploadCard setupNotice">
+          <strong>Открой через Telegram-аккаунт админа</strong>
+          <p>Загрузка видео в YouTube доступна только преподавателю. В обычном браузере без Telegram-сессии этот экран закрыт.</p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="uploadScreen">
+      <div className="uploadHeader">
+        <button type="button" className="uploadBack" onClick={onBack}>←</button>
+        <div>
+          <span>YouTube · ДЗ</span>
+          <strong>Загрузить урок</strong>
+        </div>
+      </div>
+
+      <form className="uploadCard" onSubmit={(event) => {
+        event.preventDefault();
+        void submitUpload();
+      }}>
+        <label
+          className={`dropZone ${dragActive ? "active" : ""} ${file ? "hasFile" : ""}`}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setDragActive(true);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setDragActive(true);
+          }}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragActive(false);
+            selectFile(event.dataTransfer.files.item(0));
+          }}
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept="video/*"
+            disabled={busy}
+            onChange={(event) => selectFile(event.target.files?.item(0) ?? null)}
+          />
+          <span className="dropIcon">↑</span>
+          <strong>{file ? file.name : "Перетащи видео сюда"}</strong>
+          <small>{file ? `${file.type || "video"} · ${formatBytes(file.size)}` : "или нажми, чтобы выбрать MP4 / MOV / WEBM"}</small>
+        </label>
+
+        <label className="uploadField">
+          <span>Название ролика</span>
+          <input
+            value={title}
+            disabled={busy}
+            maxLength={100}
+            placeholder="Например: VibeCoding-1 · Урок 6"
+            onChange={(event) => setTitle(event.target.value)}
+          />
+        </label>
+
+        <label className="uploadField">
+          <span>Описание и домашнее задание</span>
+          <textarea
+            value={description}
+            disabled={busy}
+            maxLength={5000}
+            placeholder="Опиши тему урока, дедлайн, что сдать ученикам и ссылки."
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </label>
+
+        <div className="uploadMeta">
+          <span>Доступ: по ссылке</span>
+          <span>Файл идёт напрямую в YouTube</span>
+        </div>
+
+        {busy && (
+          <div className="uploadProgress" aria-label={`Загрузка ${progress}%`}>
+            <span style={{ width: `${phase === "creating" ? 8 : progress}%` }} />
+            <strong>{phase === "creating" ? "Готовлю YouTube..." : `${progress}%`}</strong>
+          </div>
+        )}
+
+        {uploadError && <p className="uploadMessage error">{uploadError}</p>}
+        {resultUrl && (
+          <p className="uploadMessage success">
+            Видео готово: <a href={resultUrl} target="_blank" rel="noreferrer">{resultUrl}</a>
+          </p>
+        )}
+
+        <div className="uploadActions">
+          <button type="button" className="uploadSecondary" disabled={busy} onClick={() => inputRef.current?.click()}>
+            Выбрать файл
+          </button>
+          <button type="submit" className="uploadPrimary" disabled={busy || !file || !title.trim()}>
+            {phase === "uploading" ? "Загружаю..." : "Загрузить"}
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }
 
@@ -822,17 +1177,36 @@ function podiumMedal(place: number) {
   return null;
 }
 
-function BottomNav() {
-  const handleNavTap = () => hapticSelection();
+function BottomNav({
+  activeScreen,
+  onLeaderboard,
+  onHomework,
+}: {
+  activeScreen: ActiveScreen;
+  onLeaderboard: () => void;
+  onHomework: () => void;
+}) {
   return (
     <nav className="bottomNav" aria-label="Geeks Service">
-      <button type="button" className="bottomNavButton active" aria-label="Рейтинг" aria-current="page" onClick={handleNavTap}>
+      <button
+        type="button"
+        className={`bottomNavButton ${activeScreen === "leaderboard" ? "active" : ""}`}
+        aria-label="Рейтинг"
+        aria-current={activeScreen === "leaderboard" ? "page" : undefined}
+        onClick={onLeaderboard}
+      >
         <span className="navIcon navIconRank" aria-hidden="true"><i /><i /><i /></span>
       </button>
-      <button type="button" className="bottomNavButton bottomNavPrimary" aria-label="Отправить ДЗ" onClick={handleNavTap}>
+      <button
+        type="button"
+        className={`bottomNavButton bottomNavPrimary ${activeScreen === "homeworkUpload" ? "active" : ""}`}
+        aria-label="Отправить ДЗ"
+        aria-current={activeScreen === "homeworkUpload" ? "page" : undefined}
+        onClick={onHomework}
+      >
         <span className="navIcon navIconHomework" aria-hidden="true"><span className="uploadArrow" /><strong>ДЗ</strong></span>
       </button>
-      <button type="button" className="bottomNavButton" aria-label="Профиль" onClick={handleNavTap}>
+      <button type="button" className="bottomNavButton" aria-label="Профиль" onClick={() => hapticSelection()}>
         <span className="navIcon navIconProfile" aria-hidden="true" />
       </button>
     </nav>
