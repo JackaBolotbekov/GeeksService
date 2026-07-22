@@ -460,9 +460,21 @@ function mergeStudentPatch(student: StudentView, patch: StudentPatch): StudentVi
 }
 
 function ScheduleBadge({ label }: { label: string }) {
+  const labels = ["VibeCoding-1", label];
+  const [index, setIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setIndex((current) => (current + 1) % labels.length);
+    }, 5600);
+    return () => window.clearInterval(timer);
+  }, [labels.length]);
+
+  const activeLabel = labels[index] ?? label;
+
   return (
     <span className="groupBadge" aria-label="Текущий учебный прогресс">
-      <span className="groupBadgeText">{label}</span>
+      <span className="groupBadgeText" key={activeLabel}>{activeLabel}</span>
     </span>
   );
 }
@@ -808,15 +820,38 @@ function ProfileScreen({
 }) {
   const [monthIndex, setMonthIndex] = useState(() => initialScheduleMonthIndex(schedule));
   const [editing, setEditing] = useState(false);
+  const [monthMotion, setMonthMotion] = useState<"prev" | "next" | "idle">("idle");
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const months = schedule.months;
   const safeMonthIndex = Math.min(Math.max(monthIndex, 0), Math.max(0, months.length - 1));
   const currentMonth = months[safeMonthIndex] ?? months[0] ?? null;
+
+  const navigateMonth = (step: -1 | 1) => {
+    setMonthIndex((current) => {
+      const next = Math.min(Math.max(current + step, 0), Math.max(0, months.length - 1));
+      if (next !== current) {
+        setMonthMotion(step > 0 ? "next" : "prev");
+        hapticSelection();
+      }
+      return next;
+    });
+  };
+
+  const finishSwipe = (x: number, y: number) => {
+    const start = swipeStartRef.current;
+    swipeStartRef.current = null;
+    if (!start) return;
+    const dx = x - start.x;
+    const dy = y - start.y;
+    if (Math.abs(dx) < 44 || Math.abs(dx) < Math.abs(dy) * 1.12) return;
+    navigateMonth(dx < 0 ? 1 : -1);
+  };
 
   return (
     <section className="profileScreen">
       <div className="calendarHero">
         <div className="calendarTopline">
-          <span>{schedule.currentLabel}</span>
+          <span>Длительность обучения: 1 мес. 12 уроков</span>
           {isAdmin && (
             <button
               type="button"
@@ -834,32 +869,34 @@ function ProfileScreen({
         </div>
 
         {currentMonth && (
-          <div className="calendarCard" aria-label="Календарь занятий">
+          <div
+            className="calendarCard"
+            aria-label="Календарь занятий"
+            onPointerDown={(event) => {
+              swipeStartRef.current = { x: event.clientX, y: event.clientY };
+            }}
+            onPointerUp={(event) => finishSwipe(event.clientX, event.clientY)}
+            onPointerCancel={() => {
+              swipeStartRef.current = null;
+            }}
+          >
             <div className="calendarHeader">
-              <button
-                type="button"
-                disabled={safeMonthIndex <= 0}
-                onClick={() => setMonthIndex((current) => Math.max(0, current - 1))}
-                aria-label="Предыдущий учебный месяц"
-              >
-                ←
-              </button>
               <strong>{currentMonth.label}</strong>
-              <button
-                type="button"
-                disabled={safeMonthIndex >= months.length - 1}
-                onClick={() => setMonthIndex((current) => Math.min(months.length - 1, current + 1))}
-                aria-label="Следующий учебный месяц"
-              >
-                →
-              </button>
             </div>
-            <CalendarMonth month={currentMonth} lessons={schedule.lessons} />
+            <div className={`calendarMonthPane ${monthMotion}`} key={currentMonth.key} onAnimationEnd={() => setMonthMotion("idle")}>
+              <CalendarMonth month={currentMonth} lessons={schedule.lessons} />
+            </div>
+            {months.length > 1 && (
+              <div className="calendarSwipeHint" aria-hidden="true">
+                <span>‹</span>
+                <strong>свайп</strong>
+                <span>›</span>
+              </div>
+            )}
           </div>
         )}
 
         {scheduleError && <p className="calendarNote error">{scheduleError}</p>}
-        {!scheduleError && <p className="calendarNote">Жёлтые дни — занятия, которые уже прошли.</p>}
       </div>
 
       {editing && isAdmin && sessionToken && (
@@ -886,6 +923,7 @@ function CalendarMonth({
   lessons: ScheduleResponse["lessons"];
 }) {
   const today = bishkekDateKey();
+  const transferDates = new Set(["2026-07-17"]);
   const byDate = new Map<string, ScheduleResponse["lessons"]>();
   for (const lesson of lessons) {
     const key = lesson.scheduledAt.slice(0, 10);
@@ -905,14 +943,16 @@ function CalendarMonth({
         const dayLessons = byDate.get(key) ?? [];
         const mainLesson = dayLessons[0] ?? null;
         const completed = dayLessons.some((lesson) => lesson.isCompleted);
+        const isTransfer = transferDates.has(key);
         return (
           <span
-            className={`calendarDay ${mainLesson ? "lesson" : ""} ${completed ? "completed" : ""} ${key === today ? "today" : ""}`}
+            className={`calendarDay ${mainLesson ? "lesson" : ""} ${mainLesson && !completed ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${key === today ? "today" : ""}`}
             key={key}
-            title={mainLesson ? `Урок ${mainLesson.lessonNumber}` : undefined}
+            title={isTransfer ? "Перенос" : mainLesson ? `Урок ${mainLesson.lessonNumber}` : undefined}
           >
             <strong>{cell}</strong>
-            {mainLesson && <small>{mainLesson.lessonNumber}</small>}
+            {mainLesson && <small className="calendarLessonBadge">{mainLesson.lessonNumber}</small>}
+            {isTransfer && <small className="calendarLessonBadge transferBadge">перенос</small>}
           </span>
         );
       })}

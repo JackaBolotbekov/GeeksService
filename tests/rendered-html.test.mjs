@@ -42,6 +42,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /heroStats/);
   assert.match(app, /ScheduleBadge/);
   assert.match(app, /schedule\.currentLabel/);
+  assert.match(app, /VibeCoding-1/);
+  assert.match(app, /5600/);
   assert.match(app, /activeScreen === "profile"/);
   assert.match(app, /ProfileScreen/);
   assert.match(app, /CalendarMonth/);
@@ -49,7 +51,6 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /\/api\/schedule/);
   assert.match(app, /\/api\/admin\/schedule/);
   assert.match(app, /datetimeLocalToBishkekIso/);
-  assert.doesNotMatch(app, /VibeCoding-1/);
   assert.doesNotMatch(app, /RotatingGroupBadge/);
   assert.doesNotMatch(app, /GROUP_BADGES/);
   assert.doesNotMatch(app, /3200/);
@@ -134,7 +135,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /studentEditInput/);
   assert.doesNotMatch(app, /startLongPress/);
   assert.doesNotMatch(app, /longPressTimer/);
-  assert.doesNotMatch(app, /onPointerDown/);
+  assert.doesNotMatch(app, /onPointerDown=\{startLongPress/);
   assert.doesNotMatch(app, /onStudentChange/);
   assert.doesNotMatch(app, /inlineNameInput/);
   assert.doesNotMatch(app, /\.select\(\)/);
@@ -178,8 +179,15 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.profileScreen\s*{[^}]*padding:\s*0 0 112px/s);
   assert.match(css, /\.calendarCard\s*{[^}]*aspect-ratio:\s*1 \/ 1/s);
   assert.match(css, /\.calendarCard\s*{[^}]*background:\s*var\(--card\)/s);
+  assert.match(css, /\.calendarCard\s*{[^}]*touch-action:\s*pan-y/s);
   assert.match(css, /\.calendarGrid\s*{[^}]*grid-template-columns:\s*repeat\(7,\s*minmax\(0,\s*1fr\)\)/s);
   assert.match(css, /\.calendarDay\.completed\s*{[^}]*background:\s*var\(--yellow\)/s);
+  assert.match(css, /\.calendarDay\.upcoming\s*{[^}]*background:\s*#fff4a8/s);
+  assert.match(css, /\.calendarDay\.transfer\s*{[^}]*background:\s*#ffd9a8/s);
+  assert.match(css, /\.calendarDay\.today\s*{[^}]*background:\s*#dff7e7/s);
+  assert.match(css, /\.calendarSwipeHint\s*{/);
+  assert.match(css, /@keyframes calendarSlideNext/);
+  assert.match(css, /@keyframes badgeTextSwap/);
   assert.match(css, /\.scheduleEditor\s*{[^}]*background:\s*var\(--card\)/s);
   assert.match(css, /\.scheduleLessonField input\s*{[^}]*font-size:\s*16px/s);
   assert.match(css, /\.homeworkDrop\s*{[^}]*min-height:\s*clamp\(118px,\s*19svh,\s*156px\)/s);
