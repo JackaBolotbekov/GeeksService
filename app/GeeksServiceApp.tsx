@@ -318,6 +318,7 @@ function rankVisibleStudents(students: StudentView[]): StudentView[] {
     .filter((student) => student.status === "active")
     .sort((left, right) =>
       right.totalScore - left.totalScore
+      || compareScoreTime(left.lastScoredAt, right.lastScoredAt)
       || right.completedLessons - left.completedLessons
       || left.displayName.localeCompare(right.displayName, "ru"),
     );
@@ -329,15 +330,35 @@ function rankVisibleStudents(students: StudentView[]): StudentView[] {
   }));
 }
 
+function compareScoreTime(left: string | null, right: string | null): number {
+  if (left && right) return left.localeCompare(right);
+  if (left) return -1;
+  if (right) return 1;
+  return 0;
+}
+
+function lastScoredAt(scores: StudentView["scores"]): string | null {
+  return scores.reduce<string | null>((latest, cell) => {
+    if (cell.score === null || !cell.updatedAt) return latest;
+    return !latest || cell.updatedAt > latest ? cell.updatedAt : latest;
+  }, null);
+}
+
 function withScore(students: StudentView[], studentId: string, lessonNumber: number, score: number | null): StudentView[] {
+  const updatedAt = new Date().toISOString();
   return rankVisibleStudents(students.map((student) => {
     if (student.id !== studentId) return student;
-    const scores = student.scores.map((cell) => cell.lessonNumber === lessonNumber ? { ...cell, score } : cell);
+    const scores = student.scores.map((cell) =>
+      cell.lessonNumber === lessonNumber
+        ? { ...cell, score, updatedAt: score === null ? null : updatedAt }
+        : cell,
+    );
     return {
       ...student,
       scores,
       completedLessons: scores.filter((cell) => cell.score !== null).length,
       totalScore: scores.reduce((sum, cell) => sum + (cell.score ?? 0), 0),
+      lastScoredAt: lastScoredAt(scores),
     };
   }));
 }
@@ -454,6 +475,10 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
     runWithViewTransition(() => {
       setLeaderboard((current) => typeof next === "function" ? next(current) : next);
     });
+  };
+
+  const setLeaderboardFast = (next: StudentView[] | ((current: StudentView[]) => StudentView[])) => {
+    setLeaderboard((current) => typeof next === "function" ? next(current) : next);
   };
 
   const applyAdminResponse = (next: AdminStudentsResponse) => {
@@ -600,15 +625,15 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
                 onScoreChange={async (student, lessonNumber, score) => {
                   if (!sessionToken) return;
                   const previous = leaderboardRef.current;
-                  setLeaderboardSmooth((current) => withScore(current, student.id, lessonNumber, score));
+                  setLeaderboardFast((current) => withScore(current, student.id, lessonNumber, score));
                   try {
                     const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}/scores/${lessonNumber}`, {
                       method: "PUT",
                       body: JSON.stringify({ score }),
                     }, sessionToken);
-                    applyAdminResponse(response);
+                    setLeaderboardFast(rankVisibleStudents(response.students));
                   } catch (caught) {
-                    setLeaderboardSmooth(previous);
+                    setLeaderboardFast(previous);
                     throw caught;
                   }
                 }}
@@ -1023,10 +1048,13 @@ function Leaderboard({
 
   const saveScore = async (student: StudentView, lessonNumber: number, score: number | null) => {
     const key = `${student.id}:${lessonNumber}`;
-    setSavingKey(key);
     setActiveLesson(null);
     hapticImpact("light");
     try {
+      window.setTimeout(() => {
+        setSavingKey((current) => current === key ? null : current);
+      }, 220);
+      setSavingKey(key);
       await onScoreChange(student, lessonNumber, score);
       hapticNotice("success");
     } catch {
@@ -1208,7 +1236,7 @@ function Leaderboard({
                         type="button"
                         className={`lessonChip ${cell.score === null ? "" : "filled"} ${activeForStudent === cell.lessonNumber ? "active" : ""}`}
                         key={cell.lessonNumber}
-                        disabled={Boolean(savingKey) || !isAdmin}
+                        disabled={!isAdmin}
                         onClick={() => {
                           hapticSelection();
                           setActiveLesson((current) =>
@@ -1230,7 +1258,7 @@ function Leaderboard({
                         type="button"
                         className="scoreOption"
                         key={score}
-                        disabled={Boolean(savingKey)}
+                        disabled={savingKey === `${student.id}:${activeForStudent}`}
                         onClick={() => void saveScore(student, activeForStudent, score)}
                       >
                         {score}
@@ -1239,7 +1267,7 @@ function Leaderboard({
                     <button
                       type="button"
                       className="scoreClear"
-                      disabled={Boolean(savingKey)}
+                      disabled={savingKey === `${student.id}:${activeForStudent}`}
                       onClick={() => void saveScore(student, activeForStudent, null)}
                     >
                       ×

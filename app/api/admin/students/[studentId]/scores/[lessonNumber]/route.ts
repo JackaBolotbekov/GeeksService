@@ -13,7 +13,7 @@ export async function PUT(
   if (!body || !("score" in body)) return jsonError("Оценка обязательна");
 
   try {
-    await setScore(studentId, Number(lessonNumber), body.score ?? null, identity.telegramUserId);
+    await setScore(studentId, Number(lessonNumber), body.score ?? null);
     return Response.json(await adminStudentsResponse(identity.telegramUserId));
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "Не удалось поставить оценку");

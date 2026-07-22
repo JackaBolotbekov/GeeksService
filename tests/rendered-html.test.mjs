@@ -24,6 +24,10 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
   assert.match(app, /student\.totalScore/);
+  assert.match(app, /lastScoredAt/);
+  assert.match(app, /compareScoreTime\(left\.lastScoredAt,\s*right\.lastScoredAt\)/);
+  assert.match(app, /setLeaderboardFast/);
+  assert.match(app, /new Date\(\)\.toISOString\(\)/);
   assert.doesNotMatch(app, /pointsBehindLeader === 0 \? "TOP"/);
   assert.doesNotMatch(app, /<h1>/);
   assert.doesNotMatch(app, /heroStats/);
@@ -219,6 +223,12 @@ test("includes leaderboard, homework, and admin API surfaces", async () => {
   assert.match(homeworkStore, /MAX_FILE_SIZE = 50 \* 1024 \* 1024/);
   assert.match(hosting, /"r2":\s*"HOMEWORK_FILES"/);
   assert.match(store, /SET telegram_username = \?, avatar_url = COALESCE/);
+  assert.match(store, /lastScoredAt/);
+  assert.match(store, /compareScoreTime\(left\.lastScoredAt,\s*right\.lastScoredAt\)/);
+  assert.match(store, /SELECT student_id, lesson_number, score, created_at, updated_at FROM lesson_scores/);
+  assert.match(store, /const scoredAt = new Date\(\)\.toISOString\(\)/);
+  assert.match(store, /DO UPDATE SET score = excluded\.score, updated_at = excluded\.updated_at/);
+  assert.doesNotMatch(store, /return \(await listAllStudents\(currentTelegramUserId\)\)\.find\(\(item\) => item\.id === studentId\)/);
   assert.match(store, /findAvatarSourceByStudentId/);
   assert.match(store, /\/api\/avatar\/\$\{row\.id\}/);
 });

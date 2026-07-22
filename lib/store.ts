@@ -15,6 +15,8 @@ type ScoreRow = {
   student_id: string;
   lesson_number: number;
   score: number | null;
+  created_at: string | null;
+  updated_at: string | null;
 };
 
 type CreateStudentInput = {
@@ -116,7 +118,7 @@ function statusOf(value: string): StudentStatus {
 }
 
 function emptyScores(): ScoreCell[] {
-  return Array.from({ length: LESSON_COUNT }, (_, index) => ({ lessonNumber: index + 1, score: null }));
+  return Array.from({ length: LESSON_COUNT }, (_, index) => ({ lessonNumber: index + 1, score: null, updatedAt: null }));
 }
 
 function assertName(displayName: string): string {
@@ -148,6 +150,10 @@ function assertLessonNumber(lessonNumber: number): number {
 function rowToStudent(row: StudentRow, scores: ScoreCell[], currentTelegramUserId: string | null): StudentView {
   const completedLessons = scores.filter((cell) => cell.score !== null).length;
   const totalScore = scores.reduce((sum, cell) => sum + (cell.score ?? 0), 0);
+  const lastScoredAt = scores.reduce<string | null>((latest, cell) => {
+    if (cell.score === null || !cell.updatedAt) return latest;
+    return !latest || cell.updatedAt > latest ? cell.updatedAt : latest;
+  }, null);
   const avatarUrl = row.avatar_url
     ?? publicTelegramAvatar(row.telegram_username)
     ?? (row.telegram_user_id ? `/api/avatar/${row.id}` : null);
@@ -161,6 +167,7 @@ function rowToStudent(row: StudentRow, scores: ScoreCell[], currentTelegramUserI
     scores,
     completedLessons,
     totalScore,
+    lastScoredAt,
     place: null,
     pointsBehindLeader: 0,
     isCurrentUser: Boolean(currentTelegramUserId && row.telegram_user_id === currentTelegramUserId),
@@ -172,6 +179,7 @@ function withRanking(students: StudentView[]): StudentView[] {
     .filter((student) => student.status === "active")
     .sort((left, right) =>
       right.totalScore - left.totalScore
+      || compareScoreTime(left.lastScoredAt, right.lastScoredAt)
       || right.completedLessons - left.completedLessons
       || left.displayName.localeCompare(right.displayName, "ru"),
     );
@@ -184,15 +192,22 @@ function withRanking(students: StudentView[]): StudentView[] {
   }));
 }
 
+function compareScoreTime(left: string | null, right: string | null): number {
+  if (left && right) return left.localeCompare(right);
+  if (left) return -1;
+  if (right) return 1;
+  return 0;
+}
+
 export async function listStudents(currentTelegramUserId: string | null = null): Promise<StudentView[]> {
   await ensureDatabase();
   const db = d1();
   const studentsResult = await db.prepare("SELECT * FROM students").all<StudentRow>();
-  const scoreResult = await db.prepare("SELECT student_id, lesson_number, score FROM lesson_scores").all<ScoreRow>();
+  const scoreResult = await db.prepare("SELECT student_id, lesson_number, score, created_at, updated_at FROM lesson_scores").all<ScoreRow>();
   const scoresByStudent = new Map<string, ScoreCell[]>();
   for (const row of scoreResult.results ?? []) {
     const scores = scoresByStudent.get(row.student_id) ?? emptyScores();
-    scores[row.lesson_number - 1] = { lessonNumber: row.lesson_number, score: row.score };
+    scores[row.lesson_number - 1] = { lessonNumber: row.lesson_number, score: row.score, updatedAt: row.updated_at ?? row.created_at };
     scoresByStudent.set(row.student_id, scores);
   }
 
@@ -223,11 +238,11 @@ export async function adminStudentsResponse(currentTelegramUserId: string | null
 async function listAllStudents(currentTelegramUserId: string | null): Promise<StudentView[]> {
   const db = d1();
   const studentsResult = await db.prepare("SELECT * FROM students").all<StudentRow>();
-  const scoreResult = await db.prepare("SELECT student_id, lesson_number, score FROM lesson_scores").all<ScoreRow>();
+  const scoreResult = await db.prepare("SELECT student_id, lesson_number, score, created_at, updated_at FROM lesson_scores").all<ScoreRow>();
   const scoresByStudent = new Map<string, ScoreCell[]>();
   for (const row of scoreResult.results ?? []) {
     const scores = scoresByStudent.get(row.student_id) ?? emptyScores();
-    scores[row.lesson_number - 1] = { lessonNumber: row.lesson_number, score: row.score };
+    scores[row.lesson_number - 1] = { lessonNumber: row.lesson_number, score: row.score, updatedAt: row.updated_at ?? row.created_at };
     scoresByStudent.set(row.student_id, scores);
   }
   return withRanking((studentsResult.results ?? []).map((row) =>
@@ -371,7 +386,7 @@ export async function importStudentsSnapshot(input: ImportedStudent[], currentTe
 
     for (const cell of student.scores ?? []) {
       if (cell.score === null) continue;
-      await setScore(studentId, cell.lessonNumber, cell.score, currentTelegramUserId);
+      await setScore(studentId, cell.lessonNumber, cell.score);
     }
   }
 
@@ -431,20 +446,19 @@ export async function deleteStudent(id: string): Promise<void> {
   ]);
 }
 
-export async function setScore(studentId: string, lessonNumber: number, score: number | null, currentTelegramUserId: string | null): Promise<StudentView> {
+export async function setScore(studentId: string, lessonNumber: number, score: number | null): Promise<void> {
   await ensureDatabase();
   const db = d1();
   const lesson = assertLessonNumber(lessonNumber);
   const cleanScore = assertScore(score);
+  const scoredAt = new Date().toISOString();
   const student = await db.prepare("SELECT id FROM students WHERE id = ?").bind(studentId).first<{ id: string }>();
   if (!student) throw new Error("Ученик не найден");
 
   await db.prepare(`
-    INSERT INTO lesson_scores (id, student_id, lesson_number, score)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO lesson_scores (id, student_id, lesson_number, score, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(student_id, lesson_number)
-    DO UPDATE SET score = excluded.score, updated_at = CURRENT_TIMESTAMP
-  `).bind(crypto.randomUUID(), studentId, lesson, cleanScore).run();
-
-  return (await listAllStudents(currentTelegramUserId)).find((item) => item.id === studentId) as StudentView;
+    DO UPDATE SET score = excluded.score, updated_at = excluded.updated_at
+  `).bind(crypto.randomUUID(), studentId, lesson, cleanScore, scoredAt, scoredAt).run();
 }

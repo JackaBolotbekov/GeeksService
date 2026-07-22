@@ -5,6 +5,7 @@ export type StudentStatus = "pending" | "active" | "archived";
 export interface ScoreCell {
   lessonNumber: number;
   score: number | null;
+  updatedAt: string | null;
 }
 
 export interface StudentView {
@@ -17,6 +18,7 @@ export interface StudentView {
   scores: ScoreCell[];
   completedLessons: number;
   totalScore: number;
+  lastScoredAt: string | null;
   place: number | null;
   pointsBehindLeader: number;
   isCurrentUser: boolean;
