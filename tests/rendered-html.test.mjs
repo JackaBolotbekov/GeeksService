@@ -173,9 +173,10 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.bottomNavButton\.active,\s*\.bottomNavPrimary\.active\s*{/s);
   assert.doesNotMatch(css, /\.bottomNavButton\.active,\s*\.bottomNavPrimary\s*{/s);
   assert.match(css, /\.bottomNavPrimary\s*{[^}]*border-radius:\s*999px/s);
-  assert.match(css, /\.bottomNavPrimary\.locked\s*{[^}]*background:\s*linear-gradient\(180deg,\s*#272b36/s);
+  assert.match(css, /\.bottomNavPrimary\.locked\s*{[^}]*background:\s*linear-gradient\(180deg,\s*#fff078/s);
   assert.match(css, /\.navIconGeeks\s*{[^}]*background:\s*transparent/s);
-  assert.match(css, /\.navIconGeeks\s*{[^}]*width:\s*34px/s);
+  assert.match(css, /\.navIconGeeks\s*{[^}]*width:\s*30px/s);
+  assert.match(css, /\.navIconGeeks img\s*{[^}]*filter:\s*brightness\(0\) saturate\(100%\)/s);
   assert.match(css, /\.uploadArrow::before\s*{[^}]*height:\s*15px/s);
   assert.match(css, /\.uploadArrow::after\s*{[^}]*border-bottom:\s*14px solid #11131b/s);
   assert.match(css, /\.uploadScreen\s*{[^}]*padding:\s*2px 0 112px/s);
