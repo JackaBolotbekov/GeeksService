@@ -79,6 +79,7 @@ export interface LessonScheduleItem {
 }
 
 export interface LessonScheduleTransfer {
+  id: string;
   lessonNumber: number;
   originalScheduledAt: string;
   rescheduledAt: string;
@@ -95,6 +96,7 @@ export interface ScheduleMonth {
 export interface ScheduleResponse {
   lessons: LessonScheduleItem[];
   transfers: LessonScheduleTransfer[];
+  cancellableTransferId: string | null;
   months: ScheduleMonth[];
   currentLabel: string;
   completedLessonCount: number;

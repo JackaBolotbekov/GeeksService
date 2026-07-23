@@ -57,6 +57,8 @@ export const lessonScheduleTransfers = sqliteTable("lesson_schedule_transfers", 
   lessonNumber: integer("lesson_number").notNull(),
   originalScheduledAt: text("original_scheduled_at").notNull(),
   rescheduledAt: text("rescheduled_at").notNull(),
+  beforeScheduleJson: text("before_schedule_json"),
+  cancelledAt: text("cancelled_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => ({
   originalLessonIdx: uniqueIndex("lesson_schedule_transfers_original_unique").on(

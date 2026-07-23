@@ -50,9 +50,13 @@ export function buildScheduleResponse(
   }));
   const completed = lessons.filter((lesson) => lesson.isCompleted);
   const currentCourseMonth = completed.at(-1)?.courseMonth ?? lessons[0]?.courseMonth ?? 1;
+  const latestTransfer = transfers.at(-1) ?? null;
   return {
     lessons,
     transfers,
+    cancellableTransferId: latestTransfer && new Date(latestTransfer.rescheduledAt).getTime() > now.getTime()
+      ? latestTransfer.id
+      : null,
     months: scheduleMonths([
       ...lessons,
       ...transfers.map((transfer) => ({ scheduledAt: transfer.originalScheduledAt })),
@@ -67,6 +71,7 @@ export function transferLessonSchedule(
   source: ScheduleSource[],
   lessonNumber: number,
   expectedScheduledAt: string,
+  targetScheduledAt = defaultTransferTarget(expectedScheduledAt),
   now = new Date(),
 ): { lessons: LessonScheduleInput[]; transfer: LessonScheduleTransfer } {
   const lessons = normalizeLessonSchedule(source);
@@ -76,8 +81,18 @@ export function transferLessonSchedule(
   if (selected.scheduledAt !== expectedScheduledAt) {
     throw new ScheduleConflictError("Расписание уже изменилось. Обнови календарь и попробуй снова");
   }
-  if (selected.scheduledAt.slice(0, 10) < bishkekDateKey(now)) {
-    throw new Error("Прошедшее занятие переносить нельзя");
+  if (new Date(selected.scheduledAt).getTime() <= now.getTime()) {
+    throw new Error("Начавшееся занятие переносить нельзя");
+  }
+  if (!targetScheduledAt || Number.isNaN(new Date(targetScheduledAt).getTime())) {
+    throw new Error("Укажи корректные дату и время переноса");
+  }
+  if (new Date(targetScheduledAt).getTime() <= Math.max(now.getTime(), new Date(selected.scheduledAt).getTime())) {
+    throw new Error("Новая дата должна быть позже текущего времени занятия");
+  }
+  const previous = lessons[selectedIndex - 1];
+  if (previous && new Date(targetScheduledAt).getTime() <= new Date(previous.scheduledAt).getTime()) {
+    throw new Error("Новая дата должна быть позже предыдущего занятия");
   }
 
   const shifted = lessons.map((lesson) => ({
@@ -85,14 +100,18 @@ export function transferLessonSchedule(
     scheduledAt: lesson.scheduledAt,
     courseMonth: lesson.courseMonth,
   }));
-  for (let index = selectedIndex; index < shifted.length - 1; index += 1) {
-    shifted[index].scheduledAt = lessons[index + 1].scheduledAt;
+  shifted[selectedIndex].scheduledAt = targetScheduledAt;
+  for (let index = selectedIndex + 1; index < shifted.length; index += 1) {
+    shifted[index].scheduledAt = nextTeachingSlot(
+      shifted[index - 1].scheduledAt,
+      timeSuffix(lessons[index].scheduledAt),
+    );
   }
-  shifted[shifted.length - 1].scheduledAt = nextTeachingSlot(lessons[lessons.length - 1].scheduledAt);
 
   return {
     lessons: shifted,
     transfer: {
+      id: `preview-${lessonNumber}-${now.getTime()}`,
       lessonNumber: selected.lessonNumber,
       originalScheduledAt: selected.scheduledAt,
       rescheduledAt: shifted[selectedIndex].scheduledAt,
@@ -101,7 +120,17 @@ export function transferLessonSchedule(
   };
 }
 
-function nextTeachingSlot(iso: string): string {
+export function defaultTransferTarget(iso: string): string {
+  return nextTeachingSlot(iso, timeSuffix(iso));
+}
+
+function timeSuffix(iso: string): string {
+  const match = /^\d{4}-\d{2}-\d{2}(T.*)$/.exec(iso);
+  if (!match) throw new Error("Дата занятия должна быть ISO-строкой");
+  return match[1];
+}
+
+function nextTeachingSlot(iso: string, suffix = timeSuffix(iso)): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})(T.*)$/.exec(iso);
   if (!match) throw new Error("Дата занятия должна быть ISO-строкой");
   const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
@@ -111,7 +140,7 @@ function nextTeachingSlot(iso: string): string {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
   const day = String(date.getUTCDate()).padStart(2, "0");
-  return `${year}-${month}-${day}${match[4]}`;
+  return `${year}-${month}-${day}${suffix}`;
 }
 
 export function normalizeLessonSchedule(source: ScheduleSource[]): Array<ScheduleSource & { courseMonth: number }> {

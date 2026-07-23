@@ -61,12 +61,18 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /activeScreen === "profile"/);
   assert.match(app, /ProfileScreen/);
   assert.match(app, /CalendarMonth/);
-  assert.match(app, /ScheduleEditor/);
+  assert.doesNotMatch(app, /ScheduleEditor/);
+  assert.doesNotMatch(app, /calendarEditButton/);
   assert.match(app, /\/api\/schedule/);
   assert.match(app, /\/api\/admin\/schedule/);
   assert.match(app, /\/api\/admin\/schedule\/transfer/);
   assert.match(app, /transferLessonSchedule/);
   assert.match(app, /expectedScheduledAt/);
+  assert.match(app, /targetScheduledAt/);
+  assert.match(app, /method:\s*"DELETE"/);
+  assert.match(app, /cancelSelectedTransfer/);
+  assert.match(app, /defaultTransferTarget/);
+  assert.match(app, /type="datetime-local"/);
   assert.match(app, /calendarTransferDialog/);
   assert.match(app, /schedule\.transfers/);
   assert.doesNotMatch(app, /new Set\(\["2026-07-17"\]\)/);
@@ -224,7 +230,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.calendarDay\.upcoming\s*{[^}]*background:\s*#fff4a8/s);
   assert.match(css, /\.calendarDay\.transfer\s*{[^}]*background:\s*#deded8/s);
   assert.match(css, /\.calendarDay\.transfer\s*{[^}]*color:\s*var\(--ink\)/s);
-  assert.match(css, /\.calendarDay\.today\s*{[^}]*border-color:\s*transparent;[^}]*background:\s*#fffdf6/s);
+  assert.match(css, /\.calendarDay\.today\s*{[^}]*border-color:\s*var\(--yellow\);[^}]*background:\s*#fffdf6/s);
   assert.doesNotMatch(css, /\.calendarDay\.today\s*{[^}]*#65e58a/s);
   assert.match(css, /\.calendarDay\.transfer \.transferBadge\s*{[^}]*width:\s*max-content;[^}]*border:\s*0;[^}]*white-space:\s*nowrap;[^}]*transform:\s*translateX\(-50%\)/s);
   assert.match(css, /\.calendarTransferOverlay\s*{[^}]*position:\s*absolute/s);
@@ -236,8 +242,9 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /calendarSwipeHint/);
   assert.match(css, /@keyframes calendarSlideNext/);
   assert.match(css, /@keyframes badgeTextSwap/);
-  assert.match(css, /\.scheduleEditor\s*{[^}]*background:\s*var\(--card\)/s);
-  assert.match(css, /\.scheduleLessonField input\s*{[^}]*font-size:\s*16px/s);
+  assert.doesNotMatch(css, /\.scheduleEditor\s*{/);
+  assert.doesNotMatch(css, /\.calendarEditButton\s*{/);
+  assert.match(css, /\.transferTargetField input\s*{[^}]*font-size:\s*16px/s);
   assert.match(css, /\.homeworkDrop\s*{[^}]*min-height:\s*clamp\(118px,\s*19svh,\s*156px\)/s);
   assert.doesNotMatch(css, /\.uploadHeader/);
   assert.doesNotMatch(css, /\.uploadBack/);
@@ -289,7 +296,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
 });
 
 test("includes leaderboard, homework, schedule, and admin API surfaces", async () => {
-  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, homeworkRoute, scheduleRoute, adminScheduleRoute, transferScheduleRoute, homeworkStore, hosting, store, schedule, schema, transferMigration] = await Promise.all([
+  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, homeworkRoute, scheduleRoute, adminScheduleRoute, transferScheduleRoute, homeworkStore, hosting, store, schedule, schema, transferMigration, transferUpdateMigration] = await Promise.all([
     readFile(new URL("../app/api/leaderboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/[studentId]/route.ts", import.meta.url), "utf8"),
@@ -307,6 +314,7 @@ test("includes leaderboard, homework, schedule, and admin API surfaces", async (
     readFile(new URL("../lib/schedule.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0003_premium_leo.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0004_tiny_morgan_stark.sql", import.meta.url), "utf8"),
   ]);
 
   assert.match(leaderboardRoute, /listStudents/);
@@ -332,6 +340,9 @@ test("includes leaderboard, homework, schedule, and admin API surfaces", async (
   assert.match(adminScheduleRoute, /saveLessonSchedule/);
   assert.match(transferScheduleRoute, /requireAdmin/);
   assert.match(transferScheduleRoute, /transferScheduledLesson/);
+  assert.match(transferScheduleRoute, /cancelScheduledLessonTransfer/);
+  assert.match(transferScheduleRoute, /export async function DELETE/);
+  assert.match(transferScheduleRoute, /targetScheduledAt/);
   assert.match(transferScheduleRoute, /ScheduleConflictError/);
   assert.match(transferScheduleRoute, /409/);
   assert.match(homeworkStore, /homework_submissions/);
@@ -356,6 +367,10 @@ test("includes leaderboard, homework, schedule, and admin API surfaces", async (
   assert.match(store, /seedExistingLessonTransferIfEmpty/);
   assert.match(store, /lesson_schedule_transfers/);
   assert.match(store, /transferScheduledLesson/);
+  assert.match(store, /cancelScheduledLessonTransfer/);
+  assert.match(store, /before_schedule_json/);
+  assert.match(store, /cancelled_at IS NULL/);
+  assert.match(store, /Отменить можно только последний активный перенос/);
   assert.match(store, /db\.batch\(statements\)/);
   assert.match(store, /saveLessonSchedule/);
   assert.match(schedule, /DEFAULT_LESSON_SCHEDULE/);
@@ -365,13 +380,17 @@ test("includes leaderboard, homework, schedule, and admin API surfaces", async (
   assert.match(schedule, /currentLabel:\s*`\$\{currentCourseMonth\} мес \$\{completed\.length\} урок`/);
   assert.match(schedule, /scheduleMonths/);
   assert.match(schedule, /transferLessonSchedule/);
+  assert.match(schedule, /targetScheduledAt/);
+  assert.match(schedule, /defaultTransferTarget/);
+  assert.match(schedule, /nextTeachingSlot\(/);
   assert.match(schedule, /ScheduleConflictError/);
-  assert.match(schedule, /nextTeachingSlot/);
   assert.match(schema, /lessonSchedule/);
   assert.match(schema, /lesson_schedule/);
   assert.match(schema, /lessonScheduleTransfers/);
   assert.match(transferMigration, /CREATE TABLE `lesson_schedule_transfers`/);
   assert.match(transferMigration, /lesson_schedule_transfers_original_unique/);
+  assert.match(transferUpdateMigration, /ADD `before_schedule_json` text/);
+  assert.match(transferUpdateMigration, /ADD `cancelled_at` text/);
 });
 
 test("admin score picker stays in one compact row", async () => {

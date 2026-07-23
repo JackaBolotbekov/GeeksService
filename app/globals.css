@@ -1064,26 +1064,6 @@ button:disabled {
   text-overflow: ellipsis;
 }
 
-.calendarEditButton {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border: 2px solid #11131b;
-  border-radius: 13px;
-  background: var(--yellow);
-  color: var(--ink);
-  font-size: 20px;
-  font-weight: 950;
-  box-shadow: 3px 3px 0 #11131b;
-  transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
-}
-
-.calendarEditButton[aria-expanded="true"] {
-  transform: translateY(1px);
-  box-shadow: 1px 1px 0 #11131b;
-}
-
 .calendarCard {
   position: relative;
   aspect-ratio: 1 / 1;
@@ -1291,18 +1271,18 @@ button.calendarDay {
 }
 
 .calendarDay.today {
-  border-color: transparent;
+  border-color: var(--yellow);
   background: #fffdf6;
   box-shadow: inset 0 -2px 0 rgba(17, 19, 27, 0.07);
 }
 
 .calendarDay.today.completed {
-  border-color: transparent;
+  border-color: var(--yellow);
   background: var(--yellow);
 }
 
 .calendarDay.today.lesson:not(.completed) {
-  border-color: transparent;
+  border-color: var(--yellow);
   background: #fff4a8;
 }
 
@@ -1365,6 +1345,68 @@ button.calendarDay {
   font-size: 12px;
 }
 
+.transferSuggestedButton {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 2px solid #11131b;
+  border-radius: 12px;
+  background: #fff4a8;
+  color: var(--ink);
+  text-align: left;
+  box-shadow: 0 2px 0 #11131b;
+}
+
+.transferSuggestedButton span {
+  color: #6d717b;
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.transferSuggestedButton strong {
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.transferTargetField {
+  display: grid;
+  gap: 5px;
+}
+
+.transferTargetField span {
+  color: #6d717b;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.transferTargetField input {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  padding: 0 10px;
+  border: 2px solid #11131b;
+  border-radius: 12px;
+  background: #eef0f2;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 900;
+  outline: none;
+}
+
+.transferTargetField input:focus {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 3px rgba(255, 223, 38, 0.28);
+}
+
+.calendarTransferDialog .transferScheduleHint {
+  color: #565b66;
+  font-size: 12px;
+}
+
 .transferDialogActions {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1409,69 +1451,6 @@ button.calendarDay {
 
 .calendarNote.error {
   color: #ffb3b3;
-}
-
-.scheduleEditor {
-  display: grid;
-  gap: 10px;
-  padding: 10px;
-  border: 3px solid #11131b;
-  border-radius: 24px;
-  background: var(--card);
-  color: var(--ink);
-  box-shadow: 6px 6px 0 var(--yellow);
-}
-
-.scheduleEditorGrid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 7px;
-}
-
-.scheduleLessonField {
-  display: grid;
-  grid-template-columns: 31px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-}
-
-.scheduleLessonField span {
-  width: 31px;
-  height: 31px;
-  display: grid;
-  place-items: center;
-  border: 2px solid #11131b;
-  border-radius: 11px;
-  background: var(--yellow);
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 950;
-  box-shadow: 2px 2px 0 #11131b;
-}
-
-.scheduleLessonField input {
-  min-width: 0;
-  width: 100%;
-  height: 39px;
-  padding: 0 10px;
-  border: 2px solid #11131b;
-  border-radius: 13px;
-  background: #eef0f2;
-  color: var(--ink);
-  font-size: 16px;
-  font-weight: 850;
-  outline: none;
-}
-
-.scheduleLessonField input:focus {
-  border-color: var(--yellow);
-  box-shadow: 0 0 0 3px rgba(255, 223, 38, 0.28);
-}
-
-.scheduleActions {
-  display: grid;
-  grid-template-columns: 0.9fr 1.1fr;
-  gap: 8px;
 }
 
 .homeworkDrop .dropIcon {

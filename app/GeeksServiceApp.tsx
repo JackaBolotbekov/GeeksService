@@ -3,8 +3,8 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from "react";
-import { bishkekDateKey, buildScheduleResponse, DEFAULT_LESSON_SCHEDULE, localDateParts, transferLessonSchedule } from "@/lib/schedule";
-import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, MeResponse, ScheduleResponse, StudentView } from "@/lib/types";
+import { bishkekDateKey, buildScheduleResponse, defaultTransferTarget, DEFAULT_LESSON_SCHEDULE, localDateParts, transferLessonSchedule } from "@/lib/schedule";
+import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView } from "@/lib/types";
 
 declare global {
   interface Window {
@@ -918,13 +918,15 @@ function ProfileScreen({
   onScheduleChange: (next: ScheduleResponse) => void;
 }) {
   const [monthIndex, setMonthIndex] = useState(() => initialScheduleMonthIndex(schedule));
-  const [editing, setEditing] = useState(false);
   const [monthMotion, setMonthMotion] = useState<"prev" | "next" | "idle">("idle");
   const [selectedLesson, setSelectedLesson] = useState<LessonScheduleItem | null>(null);
+  const [selectedTransfer, setSelectedTransfer] = useState<LessonScheduleTransfer | null>(null);
+  const [transferTargetLocal, setTransferTargetLocal] = useState("");
   const [transferSaving, setTransferSaving] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const suppressDayClickRef = useRef(false);
+  const previewSnapshotsRef = useRef(new Map<string, LessonScheduleInput[]>());
   const months = schedule.months;
   const safeMonthIndex = Math.min(Math.max(monthIndex, 0), Math.max(0, months.length - 1));
   const currentMonth = months[safeMonthIndex] ?? months[0] ?? null;
@@ -934,6 +936,7 @@ function ProfileScreen({
       const next = Math.min(Math.max(current + step, 0), Math.max(0, months.length - 1));
       if (next !== current) {
         setSelectedLesson(null);
+        setSelectedTransfer(null);
         setTransferError(null);
         setMonthMotion(step > 0 ? "next" : "prev");
         hapticSelection();
@@ -960,19 +963,39 @@ function ProfileScreen({
     if (suppressDayClickRef.current || transferSaving) return;
     hapticSelection();
     setTransferError(null);
+    setSelectedTransfer(null);
     setSelectedLesson(lesson);
+    setTransferTargetLocal(defaultTransferTarget(lesson.scheduledAt).slice(0, 16));
+  };
+
+  const selectTransfer = (transfer: LessonScheduleTransfer) => {
+    if (suppressDayClickRef.current || transferSaving) return;
+    hapticSelection();
+    setTransferError(null);
+    setSelectedLesson(null);
+    setSelectedTransfer(transfer);
   };
 
   const moveSelectedLesson = async () => {
-    if (!selectedLesson || transferSaving) return;
+    if (!selectedLesson || !transferTargetLocal || transferSaving) return;
     const previous = schedule;
     setTransferSaving(true);
     setTransferError(null);
     try {
+      const targetScheduledAt = datetimeLocalToBishkekIso(transferTargetLocal);
       const calculated = transferLessonSchedule(
         schedule.lessons,
         selectedLesson.lessonNumber,
         selectedLesson.scheduledAt,
+        targetScheduledAt,
+      );
+      previewSnapshotsRef.current.set(
+        calculated.transfer.id,
+        schedule.lessons.map((lesson) => ({
+          lessonNumber: lesson.lessonNumber,
+          scheduledAt: lesson.scheduledAt,
+          courseMonth: lesson.courseMonth,
+        })),
       );
       const optimistic = buildScheduleResponse(
         calculated.lessons,
@@ -991,6 +1014,7 @@ function ProfileScreen({
         body: JSON.stringify({
           lessonNumber: selectedLesson.lessonNumber,
           expectedScheduledAt: selectedLesson.scheduledAt,
+          targetScheduledAt,
         }),
       }, sessionToken);
       onScheduleChange(response);
@@ -1005,35 +1029,58 @@ function ProfileScreen({
     }
   };
 
+  const cancelSelectedTransfer = async () => {
+    if (!selectedTransfer || transferSaving) return;
+    setTransferSaving(true);
+    setTransferError(null);
+    try {
+      if (previewMode) {
+        const snapshot = previewSnapshotsRef.current.get(selectedTransfer.id);
+        if (!snapshot) throw new Error("Этот перенос нельзя восстановить в тестовой сессии");
+        onScheduleChange(buildScheduleResponse(
+          snapshot,
+          new Date(),
+          schedule.transfers.filter((transfer) => transfer.id !== selectedTransfer.id),
+        ));
+        previewSnapshotsRef.current.delete(selectedTransfer.id);
+      } else {
+        if (!sessionToken) throw new Error("Нет сессии преподавателя");
+        const response = await api<ScheduleResponse>("/api/admin/schedule/transfer", {
+          method: "DELETE",
+          body: JSON.stringify({
+            transferId: selectedTransfer.id,
+            expectedRescheduledAt: selectedTransfer.rescheduledAt,
+          }),
+        }, sessionToken);
+        onScheduleChange(response);
+      }
+      hapticNotice("success");
+      setSelectedTransfer(null);
+    } catch (caught) {
+      hapticNotice("error");
+      setTransferError(caught instanceof Error ? caught.message : "Не удалось отменить перенос");
+    } finally {
+      setTransferSaving(false);
+    }
+  };
+
   useEffect(() => {
-    if (!selectedLesson) return;
+    if (!selectedLesson && !selectedTransfer) return;
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape" && !transferSaving) setSelectedLesson(null);
+      if (event.key === "Escape" && !transferSaving) {
+        setSelectedLesson(null);
+        setSelectedTransfer(null);
+      }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [selectedLesson, transferSaving]);
+  }, [selectedLesson, selectedTransfer, transferSaving]);
 
   return (
     <section className="profileScreen">
       <div className="calendarHero">
         <div className="calendarTopline">
           <span>Длительность обучения: 1 мес. 12 занятий</span>
-          {isAdmin && (
-            <button
-              type="button"
-              className="calendarEditButton"
-              aria-expanded={editing}
-              aria-label={editing ? "Закрыть настройку календаря" : "Настроить календарь"}
-              onClick={() => {
-                hapticImpact("light");
-                setSelectedLesson(null);
-                setEditing((current) => !current);
-              }}
-            >
-              ✎
-            </button>
-          )}
         </div>
 
         {currentMonth && (
@@ -1072,45 +1119,86 @@ function ProfileScreen({
                 month={currentMonth}
                 lessons={schedule.lessons}
                 transfers={schedule.transfers}
+                cancellableTransferId={schedule.cancellableTransferId}
                 isAdmin={isAdmin}
                 onLessonSelect={selectLesson}
+                onTransferSelect={selectTransfer}
               />
             </div>
-            {selectedLesson && (
+            {(selectedLesson || selectedTransfer) && (
               <div
                 className="calendarTransferOverlay"
                 role="presentation"
                 onClick={() => {
-                  if (!transferSaving) setSelectedLesson(null);
+                  if (!transferSaving) {
+                    setSelectedLesson(null);
+                    setSelectedTransfer(null);
+                  }
                 }}
               >
                 <div
                   className="calendarTransferDialog"
                   role="dialog"
                   aria-modal="true"
-                  aria-label={`Перенос занятия ${selectedLesson.lessonNumber}`}
+                  aria-label={selectedLesson
+                    ? `Перенос занятия ${selectedLesson.lessonNumber}`
+                    : `Отмена переноса занятия ${selectedTransfer?.lessonNumber}`}
                   onClick={(event) => event.stopPropagation()}
                 >
                   <span className="transferPreviewBadge">ПЕРЕНОС</span>
-                  <strong>Занятие {selectedLesson.lessonNumber}</strong>
-                  <p>{formatScheduleDate(selectedLesson.scheduledAt)}</p>
+                  <strong>Занятие {selectedLesson?.lessonNumber ?? selectedTransfer?.lessonNumber}</strong>
+                  {selectedLesson ? (
+                    <>
+                      <p>Сейчас: {formatScheduleDate(selectedLesson.scheduledAt)}</p>
+                      <button
+                        type="button"
+                        className="transferSuggestedButton"
+                        disabled={transferSaving}
+                        onClick={() => setTransferTargetLocal(defaultTransferTarget(selectedLesson.scheduledAt).slice(0, 16))}
+                      >
+                        <span>Ближайшее по расписанию</span>
+                        <strong>{formatScheduleDate(defaultTransferTarget(selectedLesson.scheduledAt))}</strong>
+                      </button>
+                      <label className="transferTargetField">
+                        <span>Или выбери дату и время</span>
+                        <input
+                          type="datetime-local"
+                          value={transferTargetLocal}
+                          min={selectedLesson.scheduledAt.slice(0, 16)}
+                          disabled={transferSaving}
+                          onChange={(event) => setTransferTargetLocal(event.target.value)}
+                        />
+                      </label>
+                      <p className="transferScheduleHint">Дальше занятия продолжатся по ПН / СР / ПТ.</p>
+                    </>
+                  ) : selectedTransfer ? (
+                    <>
+                      <p>Перенесено на {formatScheduleDate(selectedTransfer.rescheduledAt)}</p>
+                      <p className="transferScheduleHint">Вернуть занятие и всю последующую последовательность?</p>
+                    </>
+                  ) : null}
                   {transferError && <p className="transferDialogError">{transferError}</p>}
                   <div className="transferDialogActions">
                     <button
                       type="button"
                       className="transferCancelButton"
                       disabled={transferSaving}
-                      onClick={() => setSelectedLesson(null)}
+                      onClick={() => {
+                        setSelectedLesson(null);
+                        setSelectedTransfer(null);
+                      }}
                     >
-                      Отмена
+                      Закрыть
                     </button>
                     <button
                       type="button"
                       className="transferConfirmButton"
                       disabled={transferSaving}
-                      onClick={() => void moveSelectedLesson()}
+                      onClick={() => void (selectedLesson ? moveSelectedLesson() : cancelSelectedTransfer())}
                     >
-                      {transferSaving ? "Переношу..." : "Перенос"}
+                      {transferSaving
+                        ? selectedLesson ? "Переношу..." : "Возвращаю..."
+                        : selectedLesson ? "Перенести" : "Отменить перенос"}
                     </button>
                   </div>
                 </div>
@@ -1121,20 +1209,6 @@ function ProfileScreen({
 
         {scheduleError && <p className="calendarNote error">{scheduleError}</p>}
       </div>
-
-      {editing && isAdmin && (sessionToken || previewMode) && (
-        <ScheduleEditor
-          schedule={schedule}
-          sessionToken={sessionToken}
-          previewMode={previewMode}
-          onSaved={(next) => {
-            onScheduleChange(next);
-            setEditing(false);
-            setMonthIndex(initialScheduleMonthIndex(next));
-          }}
-          onCancel={() => setEditing(false)}
-        />
-      )}
     </section>
   );
 }
@@ -1143,17 +1217,22 @@ function CalendarMonth({
   month,
   lessons,
   transfers,
+  cancellableTransferId,
   isAdmin,
   onLessonSelect,
+  onTransferSelect,
 }: {
   month: { key: string; year: number; month: number; label: string };
   lessons: ScheduleResponse["lessons"];
   transfers: ScheduleResponse["transfers"];
+  cancellableTransferId: string | null;
   isAdmin: boolean;
   onLessonSelect: (lesson: LessonScheduleItem) => void;
+  onTransferSelect: (transfer: LessonScheduleTransfer) => void;
 }) {
   const today = bishkekDateKey();
-  const transferDates = new Set(transfers.map((transfer) => transfer.originalScheduledAt.slice(0, 10)));
+  const transferByDate = new Map(transfers.map((transfer) => [transfer.originalScheduledAt.slice(0, 10), transfer]));
+  const latestTransfer = transfers.at(-1) ?? null;
   const byDate = new Map<string, ScheduleResponse["lessons"]>();
   for (const lesson of lessons) {
     const key = lesson.scheduledAt.slice(0, 10);
@@ -1173,10 +1252,18 @@ function CalendarMonth({
         const dayLessons = byDate.get(key) ?? [];
         const mainLesson = dayLessons[0] ?? null;
         const completed = dayLessons.some((lesson) => lesson.isCompleted);
-        const isTransfer = transferDates.has(key);
+        const transfer = transferByDate.get(key) ?? null;
+        const isTransfer = Boolean(transfer);
         const isPastOrToday = key <= today;
         const canTransfer = Boolean(isAdmin && mainLesson && key >= today);
-        const className = `calendarDay ${isPastOrToday ? "past" : ""} ${mainLesson ? "lesson" : ""} ${mainLesson && !isPastOrToday ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${key === today ? "today" : ""} ${canTransfer ? "actionable" : ""}`;
+        const canCancelTransfer = Boolean(
+          isAdmin
+          && transfer
+          && latestTransfer?.id === transfer.id
+          && cancellableTransferId === transfer.id,
+        );
+        const actionable = canCancelTransfer || canTransfer;
+        const className = `calendarDay ${isPastOrToday ? "past" : ""} ${mainLesson ? "lesson" : ""} ${mainLesson && !isPastOrToday ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${key === today ? "today" : ""} ${actionable ? "actionable" : ""}`;
         const content = (
           <>
             <strong>{cell}</strong>
@@ -1184,15 +1271,20 @@ function CalendarMonth({
             {isTransfer && <small className="calendarLessonBadge transferBadge">ПЕРЕНОС</small>}
           </>
         );
-        if (canTransfer && mainLesson) {
+        if (actionable) {
           return (
             <button
               type="button"
               className={className}
               key={key}
-              title={`Занятие ${mainLesson.lessonNumber}`}
-              aria-label={`Открыть занятие ${mainLesson.lessonNumber}, ${cell} число`}
-              onClick={() => onLessonSelect(mainLesson)}
+              title={canCancelTransfer ? "Отменить перенос" : `Занятие ${mainLesson?.lessonNumber}`}
+              aria-label={canCancelTransfer
+                ? `Отменить перенос занятия ${transfer?.lessonNumber}`
+                : `Открыть занятие ${mainLesson?.lessonNumber}, ${cell} число`}
+              onClick={() => {
+                if (canCancelTransfer && transfer) onTransferSelect(transfer);
+                else if (mainLesson) onLessonSelect(mainLesson);
+              }}
             >
               {content}
             </button>
@@ -1210,91 +1302,6 @@ function CalendarMonth({
       })}
     </div>
   );
-}
-
-function ScheduleEditor({
-  schedule,
-  sessionToken,
-  previewMode,
-  onSaved,
-  onCancel,
-}: {
-  schedule: ScheduleResponse;
-  sessionToken: string | null;
-  previewMode: boolean;
-  onSaved: (next: ScheduleResponse) => void;
-  onCancel: () => void;
-}) {
-  const [drafts, setDrafts] = useState(() => schedule.lessons.map(scheduleDraft));
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const save = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const lessons: LessonScheduleInput[] = drafts.map((draft) => ({
-        lessonNumber: draft.lessonNumber,
-        scheduledAt: datetimeLocalToBishkekIso(draft.localValue),
-        courseMonth: draft.courseMonth,
-      }));
-      if (previewMode) {
-        hapticNotice("success");
-        onSaved(buildScheduleResponse(lessons, new Date(), schedule.transfers));
-        return;
-      }
-      if (!sessionToken) throw new Error("Нет сессии преподавателя");
-      const response = await api<ScheduleResponse>("/api/admin/schedule", {
-        method: "PUT",
-        body: JSON.stringify({ lessons }),
-      }, sessionToken);
-      hapticNotice("success");
-      onSaved(response);
-    } catch (caught) {
-      hapticNotice("error");
-      setError(caught instanceof Error ? caught.message : "Не удалось сохранить расписание");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="scheduleEditor">
-      <div className="scheduleEditorGrid">
-        {drafts.map((draft) => (
-          <label className="scheduleLessonField" key={draft.lessonNumber}>
-            <span>{draft.lessonNumber}</span>
-            <input
-              type="datetime-local"
-              value={draft.localValue}
-              disabled={saving}
-              onChange={(event) => {
-                const localValue = event.target.value;
-                setDrafts((current) => current.map((item) =>
-                  item.lessonNumber === draft.lessonNumber ? { ...item, localValue } : item,
-                ));
-              }}
-            />
-          </label>
-        ))}
-      </div>
-      {error && <p className="calendarNote error">{error}</p>}
-      <div className="scheduleActions">
-        <button type="button" className="uploadSecondary" disabled={saving} onClick={onCancel}>Отмена</button>
-        <button type="button" className="uploadPrimary" disabled={saving} onClick={() => void save()}>
-          {saving ? "Сохраняю..." : "Сохранить"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function scheduleDraft(lesson: ScheduleResponse["lessons"][number]) {
-  return {
-    lessonNumber: lesson.lessonNumber,
-    localValue: lesson.scheduledAt.slice(0, 16),
-    courseMonth: lesson.courseMonth,
-  };
 }
 
 function datetimeLocalToBishkekIso(value: string): string {
