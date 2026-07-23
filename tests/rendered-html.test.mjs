@@ -1,6 +1,74 @@
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
+import ts from "typescript";
+
+async function importTypeScriptModule(path) {
+  const source = await readFile(new URL(path, import.meta.url), "utf8");
+  const selfContainedSource = source.replace(
+    /^import \{ LESSON_COUNT,.*\} from "\.\/types";\r?\n/,
+    "const LESSON_COUNT = 12;\n",
+  );
+  const compiled = ts.transpileModule(selfContainedSource, {
+    compilerOptions: {
+      module: ts.ModuleKind.ESNext,
+      target: ts.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  return import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+}
+
+test("restores a legacy future transfer before its original start time", async () => {
+  const {
+    DEFAULT_LESSON_SCHEDULE,
+    buildScheduleResponse,
+    restoreLessonTransferSchedule,
+  } = await importTypeScriptModule("../lib/schedule.ts");
+  const current = DEFAULT_LESSON_SCHEDULE.map((lesson) => ({ ...lesson }));
+  [
+    "2026-07-27T16:00:00+06:00",
+    "2026-07-29T16:00:00+06:00",
+    "2026-07-31T16:00:00+06:00",
+    "2026-08-03T16:00:00+06:00",
+    "2026-08-05T16:00:00+06:00",
+  ].forEach((scheduledAt, index) => {
+    current[index + 7].scheduledAt = scheduledAt;
+  });
+
+  const restored = restoreLessonTransferSchedule(
+    current,
+    8,
+    "2026-07-24T16:00:00+06:00",
+  );
+  assert.deepEqual(
+    restored.slice(7).map((lesson) => lesson.scheduledAt),
+    [
+      "2026-07-24T16:00:00+06:00",
+      "2026-07-27T16:00:00+06:00",
+      "2026-07-29T16:00:00+06:00",
+      "2026-07-31T16:00:00+06:00",
+      "2026-08-03T16:00:00+06:00",
+    ],
+  );
+
+  const transfer = {
+    id: "transfer-8",
+    lessonNumber: 8,
+    originalScheduledAt: "2026-07-24T16:00:00+06:00",
+    rescheduledAt: "2026-07-27T16:00:00+06:00",
+    createdAt: "2026-07-23T05:48:24.298Z",
+  };
+  assert.equal(
+    buildScheduleResponse(current, new Date("2026-07-24T09:59:59Z"), [transfer])
+      .cancellableTransferId,
+    transfer.id,
+  );
+  assert.equal(
+    buildScheduleResponse(current, new Date("2026-07-24T10:00:00Z"), [transfer])
+      .cancellableTransferId,
+    null,
+  );
+});
 
 test("ships Geeks Service page instead of the starter preview", async () => {
   const [page, layout, packageJson] = await Promise.all([
@@ -383,6 +451,9 @@ test("includes leaderboard, homework, schedule, and admin API surfaces", async (
   assert.match(store, /transferScheduledLesson/);
   assert.match(store, /cancelScheduledLessonTransfer/);
   assert.match(store, /before_schedule_json/);
+  assert.match(store, /restoreLessonTransferSchedule/);
+  assert.match(store, /latest\.original_scheduled_at/);
+  assert.doesNotMatch(store, /Для этого старого переноса восстановление недоступно/);
   assert.match(store, /cancelled_at IS NULL/);
   assert.match(store, /Отменить можно только последний активный перенос/);
   assert.match(store, /db\.batch\(statements\)/);
@@ -394,6 +465,8 @@ test("includes leaderboard, homework, schedule, and admin API surfaces", async (
   assert.match(schedule, /currentLabel:\s*`\$\{currentCourseMonth\} мес \$\{completed\.length\} урок`/);
   assert.match(schedule, /scheduleMonths/);
   assert.match(schedule, /transferLessonSchedule/);
+  assert.match(schedule, /restoreLessonTransferSchedule/);
+  assert.match(schedule, /restored\[selectedIndex\]\.scheduledAt = originalScheduledAt/);
   assert.match(schedule, /targetScheduledAt/);
   assert.match(schedule, /defaultTransferTarget/);
   assert.match(schedule, /nextTeachingSlot\(/);

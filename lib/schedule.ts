@@ -54,7 +54,9 @@ export function buildScheduleResponse(
   return {
     lessons,
     transfers,
-    cancellableTransferId: latestTransfer && new Date(latestTransfer.rescheduledAt).getTime() > now.getTime()
+    cancellableTransferId: latestTransfer
+      && new Date(latestTransfer.originalScheduledAt).getTime() > now.getTime()
+      && new Date(latestTransfer.rescheduledAt).getTime() > now.getTime()
       ? latestTransfer.id
       : null,
     months: scheduleMonths([
@@ -122,6 +124,37 @@ export function transferLessonSchedule(
 
 export function defaultTransferTarget(iso: string): string {
   return nextTeachingSlot(iso, timeSuffix(iso));
+}
+
+export function restoreLessonTransferSchedule(
+  source: ScheduleSource[],
+  lessonNumber: number,
+  originalScheduledAt: string,
+): LessonScheduleInput[] {
+  const lessons = normalizeLessonSchedule(source);
+  const selectedIndex = lessons.findIndex((lesson) => lesson.lessonNumber === lessonNumber);
+  if (selectedIndex < 0) throw new Error("Занятие не найдено");
+  if (!originalScheduledAt || Number.isNaN(new Date(originalScheduledAt).getTime())) {
+    throw new Error("Исходная дата занятия указана неверно");
+  }
+  const previous = lessons[selectedIndex - 1];
+  if (previous && new Date(originalScheduledAt).getTime() <= new Date(previous.scheduledAt).getTime()) {
+    throw new ScheduleConflictError("Исходная дата конфликтует с предыдущим занятием");
+  }
+
+  const restored = lessons.map((lesson) => ({
+    lessonNumber: lesson.lessonNumber,
+    scheduledAt: lesson.scheduledAt,
+    courseMonth: lesson.courseMonth,
+  }));
+  restored[selectedIndex].scheduledAt = originalScheduledAt;
+  for (let index = selectedIndex + 1; index < restored.length; index += 1) {
+    restored[index].scheduledAt = nextTeachingSlot(
+      restored[index - 1].scheduledAt,
+      timeSuffix(lessons[index].scheduledAt),
+    );
+  }
+  return restored;
 }
 
 function timeSuffix(iso: string): string {

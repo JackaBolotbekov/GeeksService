@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { buildScheduleResponse, DEFAULT_LESSON_SCHEDULE, normalizeLessonSchedule, transferLessonSchedule as calculateLessonTransfer } from "./schedule";
+import { buildScheduleResponse, DEFAULT_LESSON_SCHEDULE, normalizeLessonSchedule, restoreLessonTransferSchedule, transferLessonSchedule as calculateLessonTransfer } from "./schedule";
 import { normalizeTelegramUsername, publicTelegramAvatar } from "./telegram";
 import { LESSON_COUNT, type AdminStudentsResponse, type LessonScheduleInput, type LessonScheduleTransfer, type ScheduleResponse, type ScoreCell, type StudentStatus, type StudentView } from "./types";
 
@@ -441,15 +441,36 @@ export async function cancelScheduledLessonTransfer(
   if (latest.rescheduled_at !== input.expectedRescheduledAt) {
     throw new ScheduleConflictError("Расписание уже изменилось. Обнови календарь и попробуй снова");
   }
-  if (new Date(latest.rescheduled_at).getTime() <= now.getTime()) {
-    throw new Error("Начавшийся перенос отменить нельзя");
-  }
-  if (!latest.before_schedule_json) {
-    throw new Error("Для этого старого переноса восстановление недоступно");
+  if (new Date(latest.original_scheduled_at).getTime() <= now.getTime()) {
+    throw new Error("Исходное занятие уже началось, перенос отменить нельзя");
   }
 
-  const parsed = JSON.parse(latest.before_schedule_json) as LessonScheduleInput[];
-  const restored = normalizeLessonSchedule(parsed);
+  let restored: LessonScheduleInput[];
+  if (latest.before_schedule_json) {
+    const parsed = JSON.parse(latest.before_schedule_json) as LessonScheduleInput[];
+    restored = normalizeLessonSchedule(parsed);
+  } else {
+    const currentResult = await db.prepare(`
+      SELECT lesson_number, scheduled_at, course_month, updated_at
+      FROM lesson_schedule
+      ORDER BY lesson_number ASC
+    `).all<LessonScheduleRow>();
+    const current = (currentResult.results ?? []).map((row) => ({
+      lessonNumber: row.lesson_number,
+      scheduledAt: row.scheduled_at,
+      courseMonth: row.course_month,
+      updatedAt: row.updated_at,
+    }));
+    const selected = current.find((lesson) => lesson.lessonNumber === latest.lesson_number);
+    if (!selected || selected.scheduledAt !== latest.rescheduled_at) {
+      throw new ScheduleConflictError("Расписание уже изменилось. Обнови календарь и попробуй снова");
+    }
+    restored = restoreLessonTransferSchedule(
+      current,
+      latest.lesson_number,
+      latest.original_scheduled_at,
+    );
+  }
   const updatedAt = now.toISOString();
   const statements = restored.map((lesson) =>
     db.prepare(`
