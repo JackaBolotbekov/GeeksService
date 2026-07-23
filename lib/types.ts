@@ -70,6 +70,33 @@ export interface TeacherMaterialUploadResponse {
   fileName: string;
 }
 
+export type TeacherUploadJobPhase =
+  | "creating"
+  | "uploading"
+  | "saving"
+  | "done"
+  | "error"
+  | "cancelled"
+  | "interrupted";
+
+export interface TeacherUploadJob {
+  id: string;
+  title: string;
+  fileName: string;
+  fileSize: number;
+  progress: number;
+  phase: TeacherUploadJobPhase;
+  videoId: string | null;
+  videoUrl: string | null;
+  errorMessage: string | null;
+  updatedAt: string;
+  isStale: boolean;
+}
+
+export interface TeacherUploadJobResponse {
+  job: TeacherUploadJob | null;
+}
+
 export interface LessonScheduleInput {
   lessonNumber: number;
   scheduledAt: string;

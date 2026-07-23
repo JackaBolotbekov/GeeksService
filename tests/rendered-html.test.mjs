@@ -260,6 +260,14 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /VIDEO_CHUNK_SIZE = 16 \* 1024 \* 1024/);
   assert.match(app, /Content-Range/);
   assert.match(app, /\/api\/admin\/youtube\/upload-session/);
+  assert.match(app, /className="screenKeepAlive"/);
+  assert.match(app, /hidden=\{visibleScreen !== "homeworkUpload"\}/);
+  assert.match(app, /TEACHER_UPLOAD_DRAFT_KEY/);
+  assert.match(app, /\/api\/admin\/youtube\/upload-job/);
+  assert.match(app, /UPLOAD_JOB_POLL_INTERVAL_MS/);
+  assert.match(app, /jobId:\s*localJobId/);
+  assert.match(app, /7_000/);
+  assert.match(app, /uploadMonitorCard/);
   assert.match(app, /activeScreen === "homeworkUpload"/);
   assert.doesNotMatch(app, /runWithViewTransition/);
   assert.doesNotMatch(app, /startViewTransition/);
@@ -347,8 +355,10 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.teacherVideoForm\s*{[^}]*background:\s*transparent;[^}]*box-shadow:\s*none/s);
   assert.match(css, /\.teacherVideoForm \.teacherVideoDescription\s*{[^}]*min-height:\s*clamp\(112px,\s*18svh,\s*150px\)/s);
   assert.match(css, /\.teacherVideoDrop\s*{[^}]*min-height:\s*clamp\(132px,\s*22svh,\s*180px\)/s);
-  assert.match(css, /\.teacherMaterialDrop\s*{[^}]*min-height:\s*76px/s);
-  assert.match(css, /\.teacherMaterialDrop \.dropIcon\s*{[^}]*width:\s*38px/s);
+  assert.match(css, /\.screenKeepAlive\[hidden\]\s*{[^}]*display:\s*none !important/s);
+  assert.match(css, /\.teacherMaterialDrop\s*{[^}]*min-height:\s*58px/s);
+  assert.match(css, /\.teacherMaterialDrop \.dropIcon\s*{[^}]*width:\s*30px/s);
+  assert.match(css, /\.uploadMonitorCard\s*{[^}]*width:\s*100%/s);
   assert.match(css, /\.materialClear\s*{[^}]*z-index:\s*2/s);
   assert.match(css, /\.uploadActions\.teacherUploadActions\s*{[^}]*width:\s*100%;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
   assert.match(css, /\.teacherUploadActions \.uploadPrimary\s*{[^}]*width:\s*100%/s);
@@ -434,7 +444,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
 });
 
 test("includes leaderboard, homework, materials, schedule, and admin API surfaces", async () => {
-  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, youtubeTokenRoute, youtubeOAuth, teacherMaterialsRoute, homeworkRoute, scheduleRoute, adminScheduleRoute, transferScheduleRoute, homeworkStore, teacherMaterialsStore, hosting, store, schedule, schema, transferMigration, transferUpdateMigration, teacherMaterialsMigration] = await Promise.all([
+  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, youtubeUploadJobRoute, youtubeUploadJobs, youtubeTokenRoute, youtubeOAuth, teacherMaterialsRoute, homeworkRoute, scheduleRoute, adminScheduleRoute, transferScheduleRoute, homeworkStore, teacherMaterialsStore, hosting, store, schedule, schema, transferMigration, transferUpdateMigration, teacherMaterialsMigration, teacherUploadJobsMigration] = await Promise.all([
     readFile(new URL("../app/api/leaderboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/[studentId]/route.ts", import.meta.url), "utf8"),
@@ -442,6 +452,8 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
     readFile(new URL("../app/api/admin/import-railway/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/avatar/[studentId]/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/youtube/upload-session/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/youtube/upload-job/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/upload-jobs.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/youtube/access-token/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/youtube-oauth.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/materials/route.ts", import.meta.url), "utf8"),
@@ -458,6 +470,7 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
     readFile(new URL("../drizzle/0003_premium_leo.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0004_tiny_morgan_stark.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0005_large_doctor_faustus.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0006_tense_sunset_bain.sql", import.meta.url), "utf8"),
   ]);
 
   assert.match(leaderboardRoute, /listStudents/);
@@ -474,6 +487,17 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(youtubeUploadRoute, /uploadType=resumable/);
   assert.match(youtubeUploadRoute, /X-Upload-Content-Length/);
   assert.match(youtubeUploadRoute, /selfDeclaredMadeForKids:\s*false/);
+  assert.match(youtubeUploadRoute, /createTeacherUploadJob/);
+  assert.match(youtubeUploadRoute, /jobId:\s*job\.id/);
+  assert.match(youtubeUploadJobRoute, /export async function GET/);
+  assert.match(youtubeUploadJobRoute, /export async function PATCH/);
+  assert.match(youtubeUploadJobRoute, /export async function DELETE/);
+  assert.match(youtubeUploadJobRoute, /requireAdmin/);
+  assert.match(youtubeUploadJobRoute, /currentTeacherUploadJob/);
+  assert.match(youtubeUploadJobs, /teacher_upload_jobs/);
+  assert.match(youtubeUploadJobs, /WHERE NOT EXISTS/);
+  assert.match(youtubeUploadJobs, /WHERE phase IN \('creating', 'uploading', 'saving'\)/);
+  assert.match(youtubeUploadJobs, /const staleAfterMs = 45_000/);
   assert.match(youtubeTokenRoute, /requireAdmin/);
   assert.match(youtubeTokenRoute, /exchangeYouTubeRefreshToken/);
   assert.match(youtubeOAuth, /oauth2\.googleapis\.com\/token/);
@@ -550,12 +574,16 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(schema, /lessonScheduleTransfers/);
   assert.match(schema, /teacherMaterials/);
   assert.match(schema, /teacher_materials/);
+  assert.match(schema, /teacherUploadJobs/);
+  assert.match(schema, /teacher_upload_jobs/);
   assert.match(transferMigration, /CREATE TABLE `lesson_schedule_transfers`/);
   assert.match(transferMigration, /lesson_schedule_transfers_original_unique/);
   assert.match(transferUpdateMigration, /ADD `before_schedule_json` text/);
   assert.match(transferUpdateMigration, /ADD `cancelled_at` text/);
   assert.match(teacherMaterialsMigration, /CREATE TABLE `teacher_materials`/);
   assert.match(teacherMaterialsMigration, /teacher_materials_file_key_unique/);
+  assert.match(teacherUploadJobsMigration, /CREATE TABLE `teacher_upload_jobs`/);
+  assert.match(teacherUploadJobsMigration, /`phase` text DEFAULT 'creating' NOT NULL/);
 });
 
 test("admin score picker stays in one compact row", async () => {

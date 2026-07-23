@@ -1,5 +1,10 @@
 import { jsonError, requireAdmin } from "@/lib/api";
 import { getEnv } from "@/lib/env";
+import {
+  ActiveUploadJobError,
+  createTeacherUploadJob,
+  updateTeacherUploadJob,
+} from "@/lib/upload-jobs";
 import { exchangeYouTubeRefreshToken, hasYouTubeUploadConfiguration } from "@/lib/youtube-oauth";
 
 type PrivacyStatus = "private" | "public" | "unlisted";
@@ -30,6 +35,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as UploadSessionRequest | null;
   const title = body?.title?.trim();
   const description = body?.description?.trim() ?? "";
+  const fileName = body?.fileName?.trim() ?? "";
   const fileSize = body?.fileSize;
   const mimeType = cleanMimeType(body?.mimeType);
   const privacyStatus = privacyStatuses.has(body?.privacyStatus ?? "unlisted")
@@ -37,6 +43,7 @@ export async function POST(request: Request) {
     : "unlisted";
 
   if (!title) return jsonError("Название ролика обязательно");
+  if (!fileName) return jsonError("Не указано имя видеофайла");
   if (title.length > 100) return jsonError("Название YouTube-видео должно быть до 100 символов");
   if (description.length > 5000) return jsonError("Описание YouTube-видео должно быть до 5000 символов");
   if (!Number.isFinite(fileSize) || !fileSize || fileSize <= 0) return jsonError("Выбери корректный видеофайл");
@@ -51,7 +58,15 @@ export async function POST(request: Request) {
     );
   }
 
+  let jobId: string | null = null;
   try {
+    const job = await createTeacherUploadJob({
+      title,
+      fileName,
+      fileSize,
+      uploaderTelegramId: identity.telegramUserId,
+    });
+    jobId = job.id;
     const token = await exchangeYouTubeRefreshToken();
     const uploadUrl = await createResumableUploadSession({
       accessToken: token.accessToken,
@@ -61,14 +76,28 @@ export async function POST(request: Request) {
       mimeType,
       privacyStatus,
     });
+    await updateTeacherUploadJob(job.id, { phase: "uploading", progress: 0 });
 
     return Response.json({
       uploadUrl,
       accessToken: token.accessToken,
       expiresIn: token.expiresIn,
       privacyStatus,
+      jobId: job.id,
     });
   } catch (error) {
+    if (error instanceof ActiveUploadJobError) {
+      return Response.json({
+        message: error.message,
+        job: error.job,
+      }, { status: 409 });
+    }
+    if (jobId) {
+      await updateTeacherUploadJob(jobId, {
+        phase: "error",
+        errorMessage: error instanceof Error ? error.message : "Не удалось создать YouTube upload session",
+      }).catch(() => undefined);
+    }
     return jsonError(error instanceof Error ? error.message : "Не удалось создать YouTube upload session", 502);
   }
 }

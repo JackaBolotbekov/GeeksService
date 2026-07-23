@@ -5,7 +5,7 @@
 import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { validateTeacherMaterialFile } from "@/lib/material-validation";
 import { bishkekDateKey, buildScheduleResponse, defaultTransferTarget, DEFAULT_LESSON_SCHEDULE, localDateParts, transferLessonSchedule } from "@/lib/schedule";
-import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherMaterialUploadResponse } from "@/lib/types";
+import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherMaterialUploadResponse, TeacherUploadJob, TeacherUploadJobResponse } from "@/lib/types";
 import { isRetriableYouTubeUploadStatus, nextYouTubeUploadOffset } from "@/lib/youtube-resumable";
 
 declare global {
@@ -34,6 +34,7 @@ type YouTubeUploadSessionResponse = {
   accessToken: string;
   expiresIn: number;
   privacyStatus: "private" | "public" | "unlisted";
+  jobId: string;
 };
 
 type YouTubeAccessTokenResponse = {
@@ -87,6 +88,9 @@ const VIDEO_UPLOAD_RETRIES = 6;
 const VIDEO_UPLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 const LEADERBOARD_CACHE_KEY = "geeks-service:leaderboard:v1";
 const LEADERBOARD_LIVE_INTERVAL_MS = 1400;
+const TEACHER_UPLOAD_DRAFT_KEY = "geeks-service:teacher-upload-draft:v1";
+const UPLOAD_JOB_POLL_INTERVAL_MS = 1600;
+const UPLOAD_JOB_REPORT_INTERVAL_MS = 1200;
 
 async function api<T>(path: string, options: RequestInit = {}, sessionToken?: string): Promise<T> {
   const response = await fetch(path, {
@@ -206,8 +210,31 @@ function fileTitle(file: File): string {
   return file.name.replace(/\.[^.]+$/, "").trim();
 }
 
+function readTeacherUploadDraft(): { title?: string; description?: string } {
+  if (typeof window === "undefined") return {};
+  try {
+    const value = JSON.parse(window.localStorage.getItem(TEACHER_UPLOAD_DRAFT_KEY) ?? "{}") as {
+      title?: unknown;
+      description?: unknown;
+    };
+    return {
+      title: typeof value.title === "string" ? value.title : undefined,
+      description: typeof value.description === "string" ? value.description : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function uploadJobStatusLabel(job: TeacherUploadJob): string {
+  if (job.phase === "interrupted") return "Загрузка остановилась на устройстве";
+  if (job.phase === "creating") return "Готовится загрузка";
+  if (job.phase === "saving") return "Сохраняется допматериал";
+  return "Видео загружается в YouTube";
 }
 
 async function uploadFileToYouTube({
@@ -876,16 +903,23 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
 
       {state === "ready" && (
         <>
-          {visibleScreen === "homeworkUpload" ? (
-            <HomeworkUploadScreen
-              isAdmin={effectiveAdmin}
-              sessionToken={sessionToken}
-              previewRole={rolePreviewAvailable ? testRole : null}
-              defaultVideoTitle={`VibeCoding 1 | Урок ${Math.max(1, schedule.completedLessonCount)} Месяц ${schedule.currentCourseMonth}`}
-              lessonNumber={Math.max(1, schedule.completedLessonCount)}
-              courseMonth={schedule.currentCourseMonth}
-            />
-          ) : visibleScreen === "profile" ? (
+          {canOpenHomework && (
+            <div
+              className="screenKeepAlive"
+              hidden={visibleScreen !== "homeworkUpload"}
+              aria-hidden={visibleScreen !== "homeworkUpload"}
+            >
+              <HomeworkUploadScreen
+                isAdmin={effectiveAdmin}
+                sessionToken={sessionToken}
+                previewRole={rolePreviewAvailable ? testRole : null}
+                defaultVideoTitle={`VibeCoding 1 | Урок ${Math.max(1, schedule.completedLessonCount)} Месяц ${schedule.currentCourseMonth}`}
+                lessonNumber={Math.max(1, schedule.completedLessonCount)}
+                courseMonth={schedule.currentCourseMonth}
+              />
+            </div>
+          )}
+          {visibleScreen === "profile" ? (
             <ProfileScreen
               schedule={schedule}
               scheduleError={scheduleError}
@@ -897,7 +931,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
                 setScheduleError(null);
               }}
             />
-          ) : (
+          ) : visibleScreen === "leaderboard" ? (
             <>
               {effectiveAdmin && showAdminPanel && (
                 <AdminPanel
@@ -960,7 +994,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
                 }}
               />
             </>
-          )}
+          ) : null}
           <BottomNav
             activeScreen={visibleScreen}
             canOpenHomework={canOpenHomework}
@@ -1446,10 +1480,11 @@ function HomeworkUploadScreen({
   const materialInputRef = useRef<HTMLInputElement | null>(null);
   const homeworkInputRef = useRef<HTMLInputElement | null>(null);
   const uploadInFlightRef = useRef(false);
+  const lastJobReportRef = useRef({ progress: -1, at: 0 });
   const previousDefaultTitleRef = useRef(defaultVideoTitle);
   const [file, setFile] = useState<File | null>(null);
-  const [title, setTitle] = useState(defaultVideoTitle);
-  const [description, setDescription] = useState("");
+  const [title, setTitle] = useState(() => readTeacherUploadDraft().title ?? defaultVideoTitle);
+  const [description, setDescription] = useState(() => readTeacherUploadDraft().description ?? "");
   const [dragActive, setDragActive] = useState(false);
   const [materialFile, setMaterialFile] = useState<File | null>(null);
   const [materialDragActive, setMaterialDragActive] = useState(false);
@@ -1458,6 +1493,8 @@ function HomeworkUploadScreen({
   const [progress, setProgress] = useState(0);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [uploadedVideo, setUploadedVideo] = useState<{ id: string; url: string } | null>(null);
+  const [localJobId, setLocalJobId] = useState<string | null>(null);
+  const [activeUploadJob, setActiveUploadJob] = useState<TeacherUploadJob | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const busy = phase === "creating" || phase === "uploading" || phase === "saving";
   const [homeworkFile, setHomeworkFile] = useState<File | null>(null);
@@ -1468,10 +1505,15 @@ function HomeworkUploadScreen({
   const [homeworkMessage, setHomeworkMessage] = useState<string | null>(null);
   const homeworkBusy = homeworkPhase === "submitting";
   const hasHomeworkContent = Boolean(homeworkLinks.trim() || homeworkDescription.trim() || homeworkFile);
+  const externalUploadJob = activeUploadJob
+    && activeUploadJob.id !== localJobId
+    && !busy
+    ? activeUploadJob
+    : null;
   const materialPending = Boolean(uploadedVideo && materialFile && !materialSavedName);
   const uploadReady = uploadedVideo
     ? materialPending
-    : Boolean(file && title.trim());
+    : Boolean(file && title.trim() && !externalUploadJob);
 
   useEffect(() => {
     setTitle((current) => (
@@ -1481,6 +1523,43 @@ function HomeworkUploadScreen({
     ));
     previousDefaultTitleRef.current = defaultVideoTitle;
   }, [defaultVideoTitle]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    try {
+      window.localStorage.setItem(TEACHER_UPLOAD_DRAFT_KEY, JSON.stringify({ title, description }));
+    } catch {
+      // The mounted component still preserves the draft when storage is unavailable.
+    }
+  }, [description, isAdmin, title]);
+
+  useEffect(() => {
+    if (!isAdmin || !sessionToken || previewRole === "teachers") return;
+    let cancelled = false;
+    let inFlight = false;
+    const refreshUploadJob = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      try {
+        const response = await api<TeacherUploadJobResponse>(
+          "/api/admin/youtube/upload-job",
+          {},
+          sessionToken,
+        );
+        if (!cancelled) setActiveUploadJob(response.job);
+      } catch {
+        // Keep the last known progress and retry without disturbing an active upload.
+      } finally {
+        inFlight = false;
+      }
+    };
+    void refreshUploadJob();
+    const timer = window.setInterval(() => void refreshUploadJob(), UPLOAD_JOB_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isAdmin, previewRole, sessionToken]);
 
   const selectFile = (nextFile: File | null) => {
     if (!nextFile) return;
@@ -1540,14 +1619,73 @@ function HomeworkUploadScreen({
     return saved.fileName;
   };
 
+  const reportUploadJob = async (
+    jobId: string,
+    patch: {
+      progress?: number;
+      phase?: "creating" | "uploading" | "saving" | "done" | "error";
+      videoId?: string | null;
+      videoUrl?: string | null;
+      errorMessage?: string | null;
+    },
+  ): Promise<TeacherUploadJob | null> => {
+    if (!sessionToken) return null;
+    const response = await api<TeacherUploadJobResponse>("/api/admin/youtube/upload-job", {
+      method: "PATCH",
+      body: JSON.stringify({ jobId, ...patch }),
+    }, sessionToken);
+    setActiveUploadJob(response.job);
+    return response.job;
+  };
+
+  const reportUploadProgress = (jobId: string, nextProgress: number, force = false) => {
+    const now = Date.now();
+    const last = lastJobReportRef.current;
+    if (
+      !force
+      && nextProgress <= last.progress
+      && now - last.at < UPLOAD_JOB_REPORT_INTERVAL_MS
+    ) return;
+    if (!force && now - last.at < UPLOAD_JOB_REPORT_INTERVAL_MS && nextProgress < last.progress + 2) return;
+    lastJobReportRef.current = { progress: nextProgress, at: now };
+    void reportUploadJob(jobId, {
+      phase: "uploading",
+      progress: nextProgress,
+      errorMessage: null,
+    }).catch(() => undefined);
+  };
+
+  useEffect(() => {
+    if (!busy || !localJobId || !sessionToken) return;
+    const heartbeat = window.setInterval(() => {
+      void api<TeacherUploadJobResponse>("/api/admin/youtube/upload-job", {
+        method: "PATCH",
+        body: JSON.stringify({
+          jobId: localJobId,
+          phase,
+          progress,
+          errorMessage: null,
+        }),
+      }, sessionToken)
+        .then((response) => setActiveUploadJob(response.job))
+        .catch(() => undefined);
+    }, 7_000);
+    return () => window.clearInterval(heartbeat);
+  }, [busy, localJobId, phase, progress, sessionToken]);
+
   const submitUpload = async () => {
     if (!isAdmin || busy || uploadInFlightRef.current || !uploadReady) return;
     uploadInFlightRef.current = true;
+    let attemptJobId = localJobId;
     setUploadError(null);
     try {
       if (uploadedVideo) {
         if (!materialFile || materialSavedName) return;
         setPhase("saving");
+        if (attemptJobId) {
+          await reportUploadJob(attemptJobId, { phase: "saving", progress: 100, errorMessage: null })
+            .catch(() => undefined);
+        }
         if (!sessionToken && previewRole === "teachers") {
           await sleep(180);
           setMaterialSavedName(materialFile.name);
@@ -1558,10 +1696,29 @@ function HomeworkUploadScreen({
         try {
           setMaterialSavedName(await saveTeacherMaterial(uploadedVideo, materialFile));
           setPhase("done");
+          if (attemptJobId) {
+            await reportUploadJob(attemptJobId, {
+              phase: "done",
+              progress: 100,
+              videoId: uploadedVideo.id,
+              videoUrl: uploadedVideo.url,
+              errorMessage: null,
+            }).catch(() => undefined);
+          }
           hapticNotice("success");
         } catch (caught) {
-          setUploadError(`Допматериал не сохранён: ${caught instanceof Error ? caught.message : "ошибка загрузки"}`);
+          const message = `Допматериал не сохранён: ${caught instanceof Error ? caught.message : "ошибка загрузки"}`;
+          setUploadError(message);
           setPhase("error");
+          if (attemptJobId) {
+            await reportUploadJob(attemptJobId, {
+              phase: "error",
+              progress: 100,
+              videoId: uploadedVideo.id,
+              videoUrl: uploadedVideo.url,
+              errorMessage: message,
+            }).catch(() => undefined);
+          }
           hapticNotice("warning");
         }
         return;
@@ -1594,6 +1751,9 @@ function HomeworkUploadScreen({
         }),
       }, sessionToken);
 
+      attemptJobId = session.jobId;
+      setLocalJobId(session.jobId);
+      lastJobReportRef.current = { progress: -1, at: 0 };
       setPhase("uploading");
       const videoId = await uploadFileToYouTube({
         file,
@@ -1605,7 +1765,10 @@ function HomeworkUploadScreen({
           }, sessionToken);
           return refreshed.accessToken;
         },
-        onProgress: setProgress,
+        onProgress: (nextProgress) => {
+          setProgress(nextProgress);
+          reportUploadProgress(session.jobId, nextProgress);
+        },
       });
       const videoUrl = `https://youtu.be/${videoId}`;
       const completedVideo = { id: videoId, url: videoUrl };
@@ -1613,20 +1776,49 @@ function HomeworkUploadScreen({
       setUploadedVideo(completedVideo);
       if (materialFile) {
         setPhase("saving");
+        await reportUploadJob(session.jobId, {
+          phase: "saving",
+          progress: 100,
+          videoId,
+          videoUrl,
+          errorMessage: null,
+        }).catch(() => undefined);
         try {
           setMaterialSavedName(await saveTeacherMaterial(completedVideo, materialFile));
         } catch (caught) {
-          setUploadError(`Видео загружено, но допматериал не сохранён: ${caught instanceof Error ? caught.message : "ошибка загрузки"}`);
+          const message = `Видео загружено, но допматериал не сохранён: ${caught instanceof Error ? caught.message : "ошибка загрузки"}`;
+          setUploadError(message);
           setPhase("error");
+          await reportUploadJob(session.jobId, {
+            phase: "error",
+            progress: 100,
+            videoId,
+            videoUrl,
+            errorMessage: message,
+          }).catch(() => undefined);
           hapticNotice("warning");
           return;
         }
       }
       setPhase("done");
+      await reportUploadJob(session.jobId, {
+        phase: "done",
+        progress: 100,
+        videoId,
+        videoUrl,
+        errorMessage: null,
+      }).catch(() => undefined);
       hapticNotice("success");
     } catch (caught) {
-      setUploadError(caught instanceof Error ? caught.message : "Не удалось загрузить видео");
+      const message = caught instanceof Error ? caught.message : "Не удалось загрузить видео";
+      setUploadError(message);
       setPhase("error");
+      if (attemptJobId) {
+        await reportUploadJob(attemptJobId, {
+          phase: "error",
+          errorMessage: message,
+        }).catch(() => undefined);
+      }
       hapticNotice("error");
     } finally {
       uploadInFlightRef.current = false;
@@ -1677,6 +1869,21 @@ function HomeworkUploadScreen({
     } catch (caught) {
       setHomeworkPhase("error");
       setHomeworkMessage(caught instanceof Error ? caught.message : "Не удалось отправить ДЗ");
+      hapticNotice("error");
+    }
+  };
+
+  const clearExternalUploadJob = async () => {
+    if (!sessionToken || !externalUploadJob?.isStale) return;
+    try {
+      await api<{ ok: boolean }>("/api/admin/youtube/upload-job", {
+        method: "DELETE",
+        body: JSON.stringify({ jobId: externalUploadJob.id }),
+      }, sessionToken);
+      setActiveUploadJob(null);
+      hapticNotice("success");
+    } catch (caught) {
+      setUploadError(caught instanceof Error ? caught.message : "Не удалось освободить загрузку");
       hapticNotice("error");
     }
   };
@@ -1750,6 +1957,32 @@ function HomeworkUploadScreen({
             </button>
           </div>
         </form>
+      </section>
+    );
+  }
+
+  if (externalUploadJob) {
+    return (
+      <section className="uploadScreen">
+        <div className="uploadMonitorCard" role="status" aria-live="polite">
+          <span className="uploadMonitorEyebrow">{uploadJobStatusLabel(externalUploadJob)}</span>
+          <strong>{externalUploadJob.title}</strong>
+          <small>{externalUploadJob.fileName} · {formatBytes(externalUploadJob.fileSize)}</small>
+          <div className="uploadProgress" aria-label={`Загрузка ${externalUploadJob.progress}%`}>
+            <span style={{ width: `${externalUploadJob.progress}%` }} />
+            <strong>{externalUploadJob.progress}%</strong>
+          </div>
+          {externalUploadJob.isStale ? (
+            <>
+              <p>Устройство перестало передавать прогресс. Вернись к нему, чтобы продолжить загрузку.</p>
+              <button type="button" className="uploadMonitorReset" onClick={() => void clearExternalUploadJob()}>
+                Освободить загрузку
+              </button>
+            </>
+          ) : (
+            <p>Можно наблюдать отсюда. Новое видео будет доступно после завершения текущего.</p>
+          )}
+        </div>
       </section>
     );
   }

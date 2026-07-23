@@ -57,6 +57,21 @@ export const teacherMaterials = sqliteTable("teacher_materials", {
   fileKeyIdx: uniqueIndex("teacher_materials_file_key_unique").on(table.fileKey),
 }));
 
+export const teacherUploadJobs = sqliteTable("teacher_upload_jobs", {
+  id: text("id").primaryKey(),
+  title: text("title").notNull(),
+  fileName: text("file_name").notNull(),
+  fileSize: integer("file_size").notNull(),
+  progress: integer("progress").notNull().default(0),
+  phase: text("phase").notNull().default("creating"),
+  videoId: text("video_id"),
+  videoUrl: text("video_url"),
+  errorMessage: text("error_message"),
+  uploaderTelegramId: text("uploader_telegram_id").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const lessonSchedule = sqliteTable("lesson_schedule", {
   id: text("id").primaryKey(),
   lessonNumber: integer("lesson_number").notNull(),
