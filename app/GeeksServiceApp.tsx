@@ -3,8 +3,8 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from "react";
-import { bishkekDateKey, buildScheduleResponse, DEFAULT_LESSON_SCHEDULE, localDateParts } from "@/lib/schedule";
-import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, MeResponse, ScheduleResponse, StudentView } from "@/lib/types";
+import { bishkekDateKey, buildScheduleResponse, DEFAULT_LESSON_SCHEDULE, localDateParts, transferLessonSchedule } from "@/lib/schedule";
+import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, MeResponse, ScheduleResponse, StudentView } from "@/lib/types";
 
 declare global {
   interface Window {
@@ -587,13 +587,50 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
       void refreshSchedule();
     }, 0);
     const timer = window.setInterval(() => {
-      setSchedule((current) => buildScheduleResponse(current.lessons.length > 0 ? current.lessons : DEFAULT_LESSON_SCHEDULE));
+      setSchedule((current) => buildScheduleResponse(
+        current.lessons.length > 0 ? current.lessons : DEFAULT_LESSON_SCHEDULE,
+        new Date(),
+        current.transfers,
+      ));
     }, 30000);
     return () => {
       window.clearTimeout(initialRefresh);
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    if (state !== "ready" || activeScreen !== "profile" || teacherPreview) return;
+    let cancelled = false;
+    let inFlight = false;
+    const tick = async () => {
+      if (cancelled || inFlight || document.visibilityState === "hidden") return;
+      inFlight = true;
+      try {
+        const response = await api<ScheduleResponse>("/api/schedule");
+        if (!cancelled) {
+          setSchedule(response);
+          setScheduleError(null);
+        }
+      } catch {
+        // Keep the current calendar visible and retry on the next tick.
+      } finally {
+        inFlight = false;
+      }
+    };
+    const delayed = window.setTimeout(() => void tick(), 250);
+    const timer = window.setInterval(() => void tick(), 4000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(delayed);
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [activeScreen, state, teacherPreview]);
 
   useEffect(() => {
     if (state !== "ready" || activeScreen !== "leaderboard") return;
@@ -883,7 +920,11 @@ function ProfileScreen({
   const [monthIndex, setMonthIndex] = useState(() => initialScheduleMonthIndex(schedule));
   const [editing, setEditing] = useState(false);
   const [monthMotion, setMonthMotion] = useState<"prev" | "next" | "idle">("idle");
+  const [selectedLesson, setSelectedLesson] = useState<LessonScheduleItem | null>(null);
+  const [transferSaving, setTransferSaving] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressDayClickRef = useRef(false);
   const months = schedule.months;
   const safeMonthIndex = Math.min(Math.max(monthIndex, 0), Math.max(0, months.length - 1));
   const currentMonth = months[safeMonthIndex] ?? months[0] ?? null;
@@ -892,6 +933,8 @@ function ProfileScreen({
     setMonthIndex((current) => {
       const next = Math.min(Math.max(current + step, 0), Math.max(0, months.length - 1));
       if (next !== current) {
+        setSelectedLesson(null);
+        setTransferError(null);
         setMonthMotion(step > 0 ? "next" : "prev");
         hapticSelection();
       }
@@ -906,8 +949,70 @@ function ProfileScreen({
     const dx = x - start.x;
     const dy = y - start.y;
     if (Math.abs(dx) < 44 || Math.abs(dx) < Math.abs(dy) * 1.12) return;
+    suppressDayClickRef.current = true;
+    window.setTimeout(() => {
+      suppressDayClickRef.current = false;
+    }, 0);
     navigateMonth(dx < 0 ? 1 : -1);
   };
+
+  const selectLesson = (lesson: LessonScheduleItem) => {
+    if (suppressDayClickRef.current || transferSaving) return;
+    hapticSelection();
+    setTransferError(null);
+    setSelectedLesson(lesson);
+  };
+
+  const moveSelectedLesson = async () => {
+    if (!selectedLesson || transferSaving) return;
+    const previous = schedule;
+    setTransferSaving(true);
+    setTransferError(null);
+    try {
+      const calculated = transferLessonSchedule(
+        schedule.lessons,
+        selectedLesson.lessonNumber,
+        selectedLesson.scheduledAt,
+      );
+      const optimistic = buildScheduleResponse(
+        calculated.lessons,
+        new Date(),
+        [...schedule.transfers, calculated.transfer],
+      );
+      onScheduleChange(optimistic);
+      if (previewMode) {
+        hapticNotice("success");
+        setSelectedLesson(null);
+        return;
+      }
+      if (!sessionToken) throw new Error("Нет сессии преподавателя");
+      const response = await api<ScheduleResponse>("/api/admin/schedule/transfer", {
+        method: "POST",
+        body: JSON.stringify({
+          lessonNumber: selectedLesson.lessonNumber,
+          expectedScheduledAt: selectedLesson.scheduledAt,
+        }),
+      }, sessionToken);
+      onScheduleChange(response);
+      hapticNotice("success");
+      setSelectedLesson(null);
+    } catch (caught) {
+      onScheduleChange(previous);
+      hapticNotice("error");
+      setTransferError(caught instanceof Error ? caught.message : "Не удалось перенести занятие");
+    } finally {
+      setTransferSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedLesson) return;
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape" && !transferSaving) setSelectedLesson(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedLesson, transferSaving]);
 
   return (
     <section className="profileScreen">
@@ -922,6 +1027,7 @@ function ProfileScreen({
               aria-label={editing ? "Закрыть настройку календаря" : "Настроить календарь"}
               onClick={() => {
                 hapticImpact("light");
+                setSelectedLesson(null);
                 setEditing((current) => !current);
               }}
             >
@@ -962,8 +1068,54 @@ function ProfileScreen({
               </button>
             </div>
             <div className={`calendarMonthPane ${monthMotion}`} key={currentMonth.key} onAnimationEnd={() => setMonthMotion("idle")}>
-              <CalendarMonth month={currentMonth} lessons={schedule.lessons} />
+              <CalendarMonth
+                month={currentMonth}
+                lessons={schedule.lessons}
+                transfers={schedule.transfers}
+                isAdmin={isAdmin}
+                onLessonSelect={selectLesson}
+              />
             </div>
+            {selectedLesson && (
+              <div
+                className="calendarTransferOverlay"
+                role="presentation"
+                onClick={() => {
+                  if (!transferSaving) setSelectedLesson(null);
+                }}
+              >
+                <div
+                  className="calendarTransferDialog"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label={`Перенос занятия ${selectedLesson.lessonNumber}`}
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <span className="transferPreviewBadge">ПЕРЕНОС</span>
+                  <strong>Занятие {selectedLesson.lessonNumber}</strong>
+                  <p>{formatScheduleDate(selectedLesson.scheduledAt)}</p>
+                  {transferError && <p className="transferDialogError">{transferError}</p>}
+                  <div className="transferDialogActions">
+                    <button
+                      type="button"
+                      className="transferCancelButton"
+                      disabled={transferSaving}
+                      onClick={() => setSelectedLesson(null)}
+                    >
+                      Отмена
+                    </button>
+                    <button
+                      type="button"
+                      className="transferConfirmButton"
+                      disabled={transferSaving}
+                      onClick={() => void moveSelectedLesson()}
+                    >
+                      {transferSaving ? "Переношу..." : "Перенос"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -990,12 +1142,18 @@ function ProfileScreen({
 function CalendarMonth({
   month,
   lessons,
+  transfers,
+  isAdmin,
+  onLessonSelect,
 }: {
   month: { key: string; year: number; month: number; label: string };
   lessons: ScheduleResponse["lessons"];
+  transfers: ScheduleResponse["transfers"];
+  isAdmin: boolean;
+  onLessonSelect: (lesson: LessonScheduleItem) => void;
 }) {
   const today = bishkekDateKey();
-  const transferDates = new Set(["2026-07-17"]);
+  const transferDates = new Set(transfers.map((transfer) => transfer.originalScheduledAt.slice(0, 10)));
   const byDate = new Map<string, ScheduleResponse["lessons"]>();
   for (const lesson of lessons) {
     const key = lesson.scheduledAt.slice(0, 10);
@@ -1017,15 +1175,36 @@ function CalendarMonth({
         const completed = dayLessons.some((lesson) => lesson.isCompleted);
         const isTransfer = transferDates.has(key);
         const isPastOrToday = key <= today;
-        return (
-          <span
-            className={`calendarDay ${isPastOrToday ? "past" : ""} ${mainLesson ? "lesson" : ""} ${mainLesson && !isPastOrToday ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${key === today ? "today" : ""}`}
-            key={key}
-            title={isTransfer ? "Перенос" : mainLesson ? `Урок ${mainLesson.lessonNumber}` : undefined}
-          >
+        const canTransfer = Boolean(isAdmin && mainLesson && key >= today);
+        const className = `calendarDay ${isPastOrToday ? "past" : ""} ${mainLesson ? "lesson" : ""} ${mainLesson && !isPastOrToday ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${key === today ? "today" : ""} ${canTransfer ? "actionable" : ""}`;
+        const content = (
+          <>
             <strong>{cell}</strong>
             {mainLesson && <small className="calendarLessonBadge">{mainLesson.lessonNumber}</small>}
-            {isTransfer && <small className="calendarLessonBadge transferBadge">перенос</small>}
+            {isTransfer && <small className="calendarLessonBadge transferBadge">ПЕРЕНОС</small>}
+          </>
+        );
+        if (canTransfer && mainLesson) {
+          return (
+            <button
+              type="button"
+              className={className}
+              key={key}
+              title={`Занятие ${mainLesson.lessonNumber}`}
+              aria-label={`Открыть занятие ${mainLesson.lessonNumber}, ${cell} число`}
+              onClick={() => onLessonSelect(mainLesson)}
+            >
+              {content}
+            </button>
+          );
+        }
+        return (
+          <span
+            className={className}
+            key={key}
+            title={isTransfer ? "Перенос" : mainLesson ? `Занятие ${mainLesson.lessonNumber}` : undefined}
+          >
+            {content}
           </span>
         );
       })}
@@ -1061,7 +1240,7 @@ function ScheduleEditor({
       }));
       if (previewMode) {
         hapticNotice("success");
-        onSaved(buildScheduleResponse(lessons));
+        onSaved(buildScheduleResponse(lessons, new Date(), schedule.transfers));
         return;
       }
       if (!sessionToken) throw new Error("Нет сессии преподавателя");
@@ -1131,6 +1310,16 @@ function initialScheduleMonthIndex(schedule: ScheduleResponse): number {
   const parts = localDateParts(source.scheduledAt);
   const key = `${parts.year}-${String(parts.month).padStart(2, "0")}`;
   return Math.max(0, schedule.months.findIndex((month) => month.key === key));
+}
+
+function formatScheduleDate(value: string): string {
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: "Asia/Bishkek",
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
 function calendarCells(year: number, month: number): Array<number | null> {

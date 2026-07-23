@@ -61,6 +61,12 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /ScheduleEditor/);
   assert.match(app, /\/api\/schedule/);
   assert.match(app, /\/api\/admin\/schedule/);
+  assert.match(app, /\/api\/admin\/schedule\/transfer/);
+  assert.match(app, /transferLessonSchedule/);
+  assert.match(app, /expectedScheduledAt/);
+  assert.match(app, /calendarTransferDialog/);
+  assert.match(app, /schedule\.transfers/);
+  assert.doesNotMatch(app, /new Set\(\["2026-07-17"\]\)/);
   assert.match(app, /datetimeLocalToBishkekIso/);
   assert.doesNotMatch(app, /RotatingGroupBadge/);
   assert.doesNotMatch(app, /GROUP_BADGES/);
@@ -212,9 +218,13 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.calendarDay\.past\s*{[^}]*background:\s*#fffdf6/s);
   assert.match(css, /\.calendarDay\.completed\s*{[^}]*background:\s*var\(--yellow\)/s);
   assert.match(css, /\.calendarDay\.upcoming\s*{[^}]*background:\s*#fff4a8/s);
-  assert.match(css, /\.calendarDay\.transfer\s*{[^}]*background:\s*#ffd9a8/s);
-  assert.match(css, /\.calendarDay\.today\s*{[^}]*background:\s*#dff7e7/s);
-  assert.match(css, /\.calendarDay\.transfer \.transferBadge\s*{[^}]*width:\s*max-content;[^}]*white-space:\s*nowrap;[^}]*transform:\s*translateX\(-50%\)/s);
+  assert.match(css, /\.calendarDay\.transfer\s*{[^}]*background:\s*#deded8/s);
+  assert.match(css, /\.calendarDay\.transfer\s*{[^}]*color:\s*var\(--ink\)/s);
+  assert.match(css, /\.calendarDay\.today\s*{[^}]*border-color:\s*transparent;[^}]*background:\s*#fffdf6/s);
+  assert.doesNotMatch(css, /\.calendarDay\.today\s*{[^}]*#65e58a/s);
+  assert.match(css, /\.calendarDay\.transfer \.transferBadge\s*{[^}]*width:\s*max-content;[^}]*border:\s*0;[^}]*white-space:\s*nowrap;[^}]*transform:\s*translateX\(-50%\)/s);
+  assert.match(css, /\.calendarTransferOverlay\s*{[^}]*position:\s*absolute/s);
+  assert.match(css, /\.calendarTransferDialog\s*{[^}]*background:\s*var\(--card\)/s);
   assert.match(app, /Длительность обучения: 1 мес\. 12 занятий/);
   assert.doesNotMatch(css, /\.calendarSwipeHint\s*{/);
   assert.match(app, /aria-label="Предыдущий учебный месяц"/);
@@ -275,7 +285,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
 });
 
 test("includes leaderboard, homework, schedule, and admin API surfaces", async () => {
-  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, homeworkRoute, scheduleRoute, adminScheduleRoute, homeworkStore, hosting, store, schedule, schema] = await Promise.all([
+  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, homeworkRoute, scheduleRoute, adminScheduleRoute, transferScheduleRoute, homeworkStore, hosting, store, schedule, schema, transferMigration] = await Promise.all([
     readFile(new URL("../app/api/leaderboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/[studentId]/route.ts", import.meta.url), "utf8"),
@@ -286,11 +296,13 @@ test("includes leaderboard, homework, schedule, and admin API surfaces", async (
     readFile(new URL("../app/api/homework/submit/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/schedule/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/schedule/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/schedule/transfer/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/homework.ts", import.meta.url), "utf8"),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../lib/store.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/schedule.ts", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0003_premium_leo.sql", import.meta.url), "utf8"),
   ]);
 
   assert.match(leaderboardRoute, /listStudents/);
@@ -314,6 +326,10 @@ test("includes leaderboard, homework, schedule, and admin API surfaces", async (
   assert.match(scheduleRoute, /getLessonSchedule/);
   assert.match(adminScheduleRoute, /requireAdmin/);
   assert.match(adminScheduleRoute, /saveLessonSchedule/);
+  assert.match(transferScheduleRoute, /requireAdmin/);
+  assert.match(transferScheduleRoute, /transferScheduledLesson/);
+  assert.match(transferScheduleRoute, /ScheduleConflictError/);
+  assert.match(transferScheduleRoute, /409/);
   assert.match(homeworkStore, /homework_submissions/);
   assert.match(homeworkStore, /HOMEWORK_FILES/);
   assert.match(homeworkStore, /bucket\.put/);
@@ -333,6 +349,10 @@ test("includes leaderboard, homework, schedule, and admin API surfaces", async (
   assert.match(store, /\/api\/avatar\/\$\{row\.id\}/);
   assert.match(store, /lesson_schedule/);
   assert.match(store, /seedLessonScheduleIfEmpty/);
+  assert.match(store, /seedExistingLessonTransferIfEmpty/);
+  assert.match(store, /lesson_schedule_transfers/);
+  assert.match(store, /transferScheduledLesson/);
+  assert.match(store, /db\.batch\(statements\)/);
   assert.match(store, /saveLessonSchedule/);
   assert.match(schedule, /DEFAULT_LESSON_SCHEDULE/);
   assert.match(schedule, /2026-07-22T16:00:00\+06:00/);
@@ -340,8 +360,14 @@ test("includes leaderboard, homework, schedule, and admin API surfaces", async (
   assert.match(schedule, /2026-08-03T16:00:00\+06:00/);
   assert.match(schedule, /currentLabel:\s*`\$\{currentCourseMonth\} мес \$\{completed\.length\} урок`/);
   assert.match(schedule, /scheduleMonths/);
+  assert.match(schedule, /transferLessonSchedule/);
+  assert.match(schedule, /ScheduleConflictError/);
+  assert.match(schedule, /nextTeachingSlot/);
   assert.match(schema, /lessonSchedule/);
   assert.match(schema, /lesson_schedule/);
+  assert.match(schema, /lessonScheduleTransfers/);
+  assert.match(transferMigration, /CREATE TABLE `lesson_schedule_transfers`/);
+  assert.match(transferMigration, /lesson_schedule_transfers_original_unique/);
 });
 
 test("admin score picker stays in one compact row", async () => {

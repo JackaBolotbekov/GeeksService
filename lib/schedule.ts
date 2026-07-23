@@ -1,4 +1,4 @@
-import { LESSON_COUNT, type LessonScheduleInput, type LessonScheduleItem, type ScheduleMonth, type ScheduleResponse } from "./types";
+import { LESSON_COUNT, type LessonScheduleInput, type LessonScheduleItem, type LessonScheduleTransfer, type ScheduleMonth, type ScheduleResponse } from "./types";
 
 export const BISHKEK_TIME_ZONE = "Asia/Bishkek";
 
@@ -36,7 +36,13 @@ type ScheduleSource = LessonScheduleInput & {
   updatedAt?: string | null;
 };
 
-export function buildScheduleResponse(source: ScheduleSource[], now = new Date()): ScheduleResponse {
+export class ScheduleConflictError extends Error {}
+
+export function buildScheduleResponse(
+  source: ScheduleSource[],
+  now = new Date(),
+  transfers: LessonScheduleTransfer[] = [],
+): ScheduleResponse {
   const lessons = normalizeLessonSchedule(source).map((lesson) => ({
     ...lesson,
     updatedAt: lesson.updatedAt ?? null,
@@ -46,11 +52,66 @@ export function buildScheduleResponse(source: ScheduleSource[], now = new Date()
   const currentCourseMonth = completed.at(-1)?.courseMonth ?? lessons[0]?.courseMonth ?? 1;
   return {
     lessons,
-    months: scheduleMonths(lessons),
+    transfers,
+    months: scheduleMonths([
+      ...lessons,
+      ...transfers.map((transfer) => ({ scheduledAt: transfer.originalScheduledAt })),
+    ]),
     currentLabel: `${currentCourseMonth} мес ${completed.length} урок`,
     completedLessonCount: completed.length,
     currentCourseMonth,
   };
+}
+
+export function transferLessonSchedule(
+  source: ScheduleSource[],
+  lessonNumber: number,
+  expectedScheduledAt: string,
+  now = new Date(),
+): { lessons: LessonScheduleInput[]; transfer: LessonScheduleTransfer } {
+  const lessons = normalizeLessonSchedule(source);
+  const selectedIndex = lessons.findIndex((lesson) => lesson.lessonNumber === lessonNumber);
+  if (selectedIndex < 0) throw new Error("Занятие не найдено");
+  const selected = lessons[selectedIndex];
+  if (selected.scheduledAt !== expectedScheduledAt) {
+    throw new ScheduleConflictError("Расписание уже изменилось. Обнови календарь и попробуй снова");
+  }
+  if (selected.scheduledAt.slice(0, 10) < bishkekDateKey(now)) {
+    throw new Error("Прошедшее занятие переносить нельзя");
+  }
+
+  const shifted = lessons.map((lesson) => ({
+    lessonNumber: lesson.lessonNumber,
+    scheduledAt: lesson.scheduledAt,
+    courseMonth: lesson.courseMonth,
+  }));
+  for (let index = selectedIndex; index < shifted.length - 1; index += 1) {
+    shifted[index].scheduledAt = lessons[index + 1].scheduledAt;
+  }
+  shifted[shifted.length - 1].scheduledAt = nextTeachingSlot(lessons[lessons.length - 1].scheduledAt);
+
+  return {
+    lessons: shifted,
+    transfer: {
+      lessonNumber: selected.lessonNumber,
+      originalScheduledAt: selected.scheduledAt,
+      rescheduledAt: shifted[selectedIndex].scheduledAt,
+      createdAt: now.toISOString(),
+    },
+  };
+}
+
+function nextTeachingSlot(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})(T.*)$/.exec(iso);
+  if (!match) throw new Error("Дата занятия должна быть ISO-строкой");
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  do {
+    date.setUTCDate(date.getUTCDate() + 1);
+  } while (![1, 3, 5].includes(date.getUTCDay()));
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}${match[4]}`;
 }
 
 export function normalizeLessonSchedule(source: ScheduleSource[]): Array<ScheduleSource & { courseMonth: number }> {

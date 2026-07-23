@@ -1085,6 +1085,7 @@ button:disabled {
 }
 
 .calendarCard {
+  position: relative;
   aspect-ratio: 1 / 1;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -1190,6 +1191,21 @@ button:disabled {
     box-shadow 180ms ease;
 }
 
+button.calendarDay {
+  width: 100%;
+  padding: 0;
+  appearance: none;
+  font: inherit;
+}
+
+.calendarDay.actionable {
+  cursor: pointer;
+}
+
+.calendarDay.actionable:active {
+  transform: scale(0.94);
+}
+
 .calendarDay strong {
   font-size: clamp(13px, 3.8vw, 18px);
   font-weight: 950;
@@ -1250,9 +1266,9 @@ button:disabled {
 }
 
 .calendarDay.transfer {
-  background: #ffd9a8;
-  border-color: rgba(17, 19, 27, 0.34);
-  color: rgba(17, 19, 27, 0.72);
+  background: #deded8;
+  border-color: rgba(17, 19, 27, 0.3);
+  color: var(--ink);
 }
 
 .calendarDay.transfer .transferBadge {
@@ -1262,7 +1278,10 @@ button:disabled {
   min-width: max-content;
   height: 18px;
   padding: 0 6px;
+  border: 0;
   border-radius: 9px;
+  background: #e5e5e0;
+  box-shadow: 0 2px 0 rgba(17, 19, 27, 0.18);
   font-size: clamp(7px, 1.9vw, 9px);
   letter-spacing: -0.025em;
   text-transform: uppercase;
@@ -1272,21 +1291,112 @@ button:disabled {
 }
 
 .calendarDay.today {
-  border-color: #65e58a;
-  background: #dff7e7;
-  box-shadow:
-    inset 0 0 0 2px rgba(101, 229, 138, 0.24),
-    inset 0 -2px 0 rgba(17, 19, 27, 0.07);
+  border-color: transparent;
+  background: #fffdf6;
+  box-shadow: inset 0 -2px 0 rgba(17, 19, 27, 0.07);
 }
 
 .calendarDay.today.completed {
-  background:
-    linear-gradient(135deg, rgba(101, 229, 138, 0.38), transparent 44%),
-    var(--yellow);
+  border-color: transparent;
+  background: var(--yellow);
+}
+
+.calendarDay.today.lesson:not(.completed) {
+  border-color: transparent;
+  background: #fff4a8;
 }
 
 .calendarDay.empty {
   visibility: hidden;
+}
+
+.calendarTransferOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  border-radius: 22px;
+  background: rgba(17, 19, 27, 0.14);
+  backdrop-filter: blur(2px);
+  animation: calendarTransferFade 160ms ease both;
+}
+
+.calendarTransferDialog {
+  width: min(292px, 100%);
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 3px solid #11131b;
+  border-radius: 20px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 6px 6px 0 var(--yellow), 0 18px 38px rgba(0, 0, 0, 0.24);
+  animation: calendarTransferIn 220ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+
+.calendarTransferDialog > strong {
+  font-size: 24px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.calendarTransferDialog > p {
+  margin: 0;
+  color: #6d717b;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.transferPreviewBadge {
+  justify-self: start;
+  padding: 5px 9px;
+  border-radius: 9px;
+  background: #deded8;
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 950;
+  letter-spacing: 0.06em;
+}
+
+.calendarTransferDialog .transferDialogError {
+  color: #b62828;
+  font-size: 12px;
+}
+
+.transferDialogActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.transferDialogActions button {
+  min-height: 44px;
+  border: 2px solid #11131b;
+  border-radius: 13px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 950;
+  transition: transform 130ms ease, box-shadow 130ms ease, opacity 130ms ease;
+}
+
+.transferDialogActions button:active:not(:disabled) {
+  transform: translateY(2px);
+}
+
+.transferDialogActions button:disabled {
+  opacity: 0.58;
+}
+
+.transferCancelButton {
+  background: #fffdf6;
+}
+
+.transferConfirmButton {
+  background: var(--yellow);
+  box-shadow: 0 3px 0 #11131b;
 }
 
 .calendarNote {
@@ -1906,6 +2016,22 @@ button:disabled {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes calendarTransferFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes calendarTransferIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
 

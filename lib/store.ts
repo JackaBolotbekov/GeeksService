@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
-import { buildScheduleResponse, DEFAULT_LESSON_SCHEDULE, normalizeLessonSchedule } from "./schedule";
+import { buildScheduleResponse, DEFAULT_LESSON_SCHEDULE, normalizeLessonSchedule, transferLessonSchedule as calculateLessonTransfer } from "./schedule";
 import { normalizeTelegramUsername, publicTelegramAvatar } from "./telegram";
-import { LESSON_COUNT, type AdminStudentsResponse, type LessonScheduleInput, type ScheduleResponse, type ScoreCell, type StudentStatus, type StudentView } from "./types";
+import { LESSON_COUNT, type AdminStudentsResponse, type LessonScheduleInput, type LessonScheduleTransfer, type ScheduleResponse, type ScoreCell, type StudentStatus, type StudentView } from "./types";
 
 type StudentRow = {
   id: string;
@@ -25,6 +25,13 @@ type LessonScheduleRow = {
   scheduled_at: string;
   course_month: number;
   updated_at: string | null;
+};
+
+type LessonScheduleTransferRow = {
+  lesson_number: number;
+  original_scheduled_at: string;
+  rescheduled_at: string;
+  created_at: string;
 };
 
 type CreateStudentInput = {
@@ -109,9 +116,20 @@ async function initializeDatabase(): Promise<void> {
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS lesson_schedule_transfers (
+        id TEXT PRIMARY KEY,
+        lesson_number INTEGER NOT NULL,
+        original_scheduled_at TEXT NOT NULL,
+        rescheduled_at TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(lesson_number, original_scheduled_at)
+      )
+    `),
   ]);
 
   await seedLessonScheduleIfEmpty(db);
+  await seedExistingLessonTransferIfEmpty(db);
 
   const existing = await db.prepare("SELECT COUNT(*) AS count FROM students").first<{ count: number }>();
   if ((existing?.count ?? 0) > 0) return;
@@ -143,8 +161,35 @@ async function seedLessonScheduleIfEmpty(db: D1Database): Promise<void> {
   ));
 }
 
+async function seedExistingLessonTransferIfEmpty(db: D1Database): Promise<void> {
+  const existing = await db.prepare("SELECT COUNT(*) AS count FROM lesson_schedule_transfers").first<{ count: number }>();
+  if ((existing?.count ?? 0) > 0) return;
+  const lesson = await db.prepare("SELECT scheduled_at FROM lesson_schedule WHERE lesson_number = 6").first<{ scheduled_at: string }>();
+  if (lesson?.scheduled_at !== "2026-07-20T16:00:00+06:00") return;
+  await db.prepare(`
+    INSERT OR IGNORE INTO lesson_schedule_transfers (
+      id, lesson_number, original_scheduled_at, rescheduled_at, created_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `).bind(
+    "seed-transfer-2026-07-17",
+    6,
+    "2026-07-17T16:00:00+06:00",
+    "2026-07-20T16:00:00+06:00",
+    "2026-07-17T16:00:00+06:00",
+  ).run();
+}
+
 function statusOf(value: string): StudentStatus {
   return value === "pending" || value === "archived" ? value : "active";
+}
+
+function transferRow(row: LessonScheduleTransferRow): LessonScheduleTransfer {
+  return {
+    lessonNumber: row.lesson_number,
+    originalScheduledAt: row.original_scheduled_at,
+    rescheduledAt: row.rescheduled_at,
+    createdAt: row.created_at,
+  };
 }
 
 function emptyScores(): ScoreCell[] {
@@ -252,11 +297,18 @@ export async function listStudents(currentTelegramUserId: string | null = null):
 export async function getLessonSchedule(now = new Date()): Promise<ScheduleResponse> {
   await ensureDatabase();
   const db = d1();
-  const result = await db.prepare(`
-    SELECT lesson_number, scheduled_at, course_month, updated_at
-    FROM lesson_schedule
-    ORDER BY lesson_number ASC
-  `).all<LessonScheduleRow>();
+  const [result, transferResult] = await Promise.all([
+    db.prepare(`
+      SELECT lesson_number, scheduled_at, course_month, updated_at
+      FROM lesson_schedule
+      ORDER BY lesson_number ASC
+    `).all<LessonScheduleRow>(),
+    db.prepare(`
+      SELECT lesson_number, original_scheduled_at, rescheduled_at, created_at
+      FROM lesson_schedule_transfers
+      ORDER BY created_at ASC
+    `).all<LessonScheduleTransferRow>(),
+  ]);
   const rows = result.results ?? [];
   const source = rows.length === LESSON_COUNT
     ? rows.map((row) => ({
@@ -266,7 +318,7 @@ export async function getLessonSchedule(now = new Date()): Promise<ScheduleRespo
       updatedAt: row.updated_at,
     }))
     : DEFAULT_LESSON_SCHEDULE;
-  return buildScheduleResponse(source, now);
+  return buildScheduleResponse(source, now, (transferResult.results ?? []).map(transferRow));
 }
 
 export async function saveLessonSchedule(input: LessonScheduleInput[], now = new Date()): Promise<ScheduleResponse> {
@@ -284,6 +336,53 @@ export async function saveLessonSchedule(input: LessonScheduleInput[], now = new
                     updated_at = excluded.updated_at
     `).bind(crypto.randomUUID(), lesson.lessonNumber, lesson.scheduledAt, lesson.courseMonth, updatedAt),
   ));
+  return getLessonSchedule(now);
+}
+
+export async function transferScheduledLesson(
+  input: { lessonNumber: number; expectedScheduledAt: string },
+  now = new Date(),
+): Promise<ScheduleResponse> {
+  await ensureDatabase();
+  const db = d1();
+  const result = await db.prepare(`
+    SELECT lesson_number, scheduled_at, course_month, updated_at
+    FROM lesson_schedule
+    ORDER BY lesson_number ASC
+  `).all<LessonScheduleRow>();
+  const source = (result.results ?? []).map((row) => ({
+    lessonNumber: row.lesson_number,
+    scheduledAt: row.scheduled_at,
+    courseMonth: row.course_month,
+    updatedAt: row.updated_at,
+  }));
+  const calculated = calculateLessonTransfer(
+    source,
+    input.lessonNumber,
+    input.expectedScheduledAt,
+    now,
+  );
+  const updatedAt = now.toISOString();
+  const selectedIndex = calculated.lessons.findIndex((lesson) => lesson.lessonNumber === input.lessonNumber);
+  const statements = calculated.lessons.slice(selectedIndex).map((lesson) =>
+    db.prepare(`
+      UPDATE lesson_schedule
+      SET scheduled_at = ?, course_month = ?, updated_at = ?
+      WHERE lesson_number = ?
+    `).bind(lesson.scheduledAt, lesson.courseMonth, updatedAt, lesson.lessonNumber),
+  );
+  statements.push(db.prepare(`
+    INSERT INTO lesson_schedule_transfers (
+      id, lesson_number, original_scheduled_at, rescheduled_at, created_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `).bind(
+    crypto.randomUUID(),
+    calculated.transfer.lessonNumber,
+    calculated.transfer.originalScheduledAt,
+    calculated.transfer.rescheduledAt,
+    calculated.transfer.createdAt,
+  ));
+  await db.batch(statements);
   return getLessonSchedule(now);
 }
 

@@ -51,3 +51,16 @@ export const lessonSchedule = sqliteTable("lesson_schedule", {
 }, (table) => ({
   lessonNumberIdx: uniqueIndex("lesson_schedule_lesson_number_unique").on(table.lessonNumber),
 }));
+
+export const lessonScheduleTransfers = sqliteTable("lesson_schedule_transfers", {
+  id: text("id").primaryKey(),
+  lessonNumber: integer("lesson_number").notNull(),
+  originalScheduledAt: text("original_scheduled_at").notNull(),
+  rescheduledAt: text("rescheduled_at").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  originalLessonIdx: uniqueIndex("lesson_schedule_transfers_original_unique").on(
+    table.lessonNumber,
+    table.originalScheduledAt,
+  ),
+}));
