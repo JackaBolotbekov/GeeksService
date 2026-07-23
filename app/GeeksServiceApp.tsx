@@ -1515,13 +1515,13 @@ function HomeworkUploadScreen({
             <input
               ref={homeworkInputRef}
               type="file"
-              accept=".md,.markdown,.zip,.pdf,.txt,.doc,.docx,image/*,video/*"
+              accept=".md,.markdown,.zip,.pdf,.html,.htm,.ppt,.pptx,.txt,.doc,.docx,image/*,video/*"
               disabled={homeworkBusy}
               onChange={(event) => selectHomeworkFile(event.target.files?.item(0) ?? null)}
             />
             <span className="dropIcon">↑</span>
             <strong>{homeworkFile ? homeworkFile.name : "нажми или перетащи"}</strong>
-            <small>{homeworkFile ? formatBytes(homeworkFile.size) : ".md .zip"}</small>
+            <small>{homeworkFile ? formatBytes(homeworkFile.size) : ".md .zip .pdf .html .pptx"}</small>
           </label>
 
           {homeworkMessage && <p className={`uploadMessage ${homeworkPhase === "error" ? "error" : "success"}`}>{homeworkMessage}</p>}

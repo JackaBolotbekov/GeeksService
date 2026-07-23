@@ -1023,9 +1023,9 @@ button:disabled {
   min-height: clamp(118px, 19svh, 156px);
 }
 
-.homeworkSubmitActions {
+.uploadActions.homeworkSubmitActions {
   width: 100%;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .homeworkSubmitActions .uploadPrimary {

@@ -108,7 +108,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /placeholder=\{"Ссылки,\\ngithub,\\n@Sites,\\n@telegram_bot"\}/);
   assert.match(app, /placeholder="Можешь дополнить от себя\.\."/);
   assert.match(app, /нажми или перетащи/);
-  assert.match(app, /\.md \.zip/);
+  assert.match(app, /\.md \.zip \.pdf \.html \.pptx/);
+  assert.match(app, /accept="\.md,\.markdown,\.zip,\.pdf,\.html,\.htm,\.ppt,\.pptx/);
   assert.match(app, /homeworkSubmitActions/);
   assert.doesNotMatch(app, /uploadCard homeworkCard/);
   assert.doesNotMatch(app, /homeworkExtra/);
@@ -204,8 +205,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.homeworkCard\s*{[^}]*display:\s*grid/s);
   assert.match(css, /\.homeworkCard\s*{[^}]*background:\s*transparent/s);
   assert.match(css, /\.homeworkCard\s*{[^}]*box-shadow:\s*none/s);
-  assert.match(css, /\.homeworkSubmitActions\s*{[^}]*width:\s*100%/s);
-  assert.match(css, /\.homeworkSubmitActions\s*{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(css, /\.uploadActions\.homeworkSubmitActions\s*{[^}]*width:\s*100%/s);
+  assert.match(css, /\.uploadActions\.homeworkSubmitActions\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
   assert.match(css, /\.homeworkSubmitActions \.uploadPrimary\s*{[^}]*width:\s*100%/s);
   assert.match(css, /\.calendarDay \.calendarLessonBadge:not\(\.transferBadge\)\s*{[^}]*right:\s*auto;[^}]*left:\s*-6px/s);
   assert.match(css, /\.profileScreen\s*{[^}]*padding:\s*0 0 112px/s);
