@@ -53,7 +53,10 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.brandRoleSwitcher\s*{[^}]*background:\s*transparent/s);
   assert.match(css, /@keyframes roleLabelSwap/);
   assert.match(app, /schedule\.currentLabel/);
-  assert.match(app, /VibeCoding-1/);
+  assert.match(app, /VibeCoding 1/);
+  assert.match(app, /GEEKS<span key=\{testRole\}>/);
+  assert.doesNotMatch(app, /GEEKS <span key=\{testRole\}>/);
+  assert.match(css, /\.topbar\.previewTeacher \.topActions\s*\{[^}]*display:\s*flex;[^}]*flex-wrap:\s*nowrap/s);
   assert.match(app, /5600/);
   assert.match(app, /activeScreen === "profile"/);
   assert.match(app, /ProfileScreen/);

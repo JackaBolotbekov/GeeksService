@@ -468,7 +468,7 @@ function mergeStudentPatch(student: StudentView, patch: StudentPatch): StudentVi
 }
 
 function ScheduleBadge({ label }: { label: string }) {
-  const labels = ["VibeCoding-1", label];
+  const labels = ["VibeCoding 1", label];
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -742,10 +742,10 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
               aria-label={`Тестовая роль: ${TEST_ROLE_LABELS[testRole]}. Переключить роль`}
               onClick={cycleTestRole}
             >
-              GEEKS <span key={testRole}>{TEST_ROLE_LABELS[testRole]}</span>
+              GEEKS<span key={testRole}>{TEST_ROLE_LABELS[testRole]}</span>
             </button>
           ) : (
-            <span>GEEKS <span>SERVICE</span></span>
+            <span>GEEKS<span>SERVICE</span></span>
           )}
         </div>
         <div className="topActions">

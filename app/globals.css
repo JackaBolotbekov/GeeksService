@@ -111,7 +111,7 @@ button:disabled {
 
 .brand {
   flex: 1 1 auto;
-  gap: 8px;
+  gap: 5px;
   font-weight: 900;
   letter-spacing: -0.04em;
   text-transform: uppercase;
@@ -140,8 +140,9 @@ button:disabled {
   background: transparent;
   color: white;
   font: inherit;
+  font-size: clamp(14px, 4vw, 16px);
   font-weight: 900;
-  letter-spacing: inherit;
+  letter-spacing: -0.055em;
   line-height: 1;
   text-align: left;
   text-overflow: ellipsis;
@@ -165,7 +166,7 @@ button:disabled {
 
 .bolt {
   width: auto;
-  height: clamp(38px, 10vw, 46px);
+  height: clamp(30px, 8vw, 37px);
   display: block;
   object-fit: contain;
   flex: 0 0 auto;
@@ -183,25 +184,24 @@ button:disabled {
 }
 
 .topbar.previewTeacher {
-  align-items: flex-start;
+  align-items: center;
 }
 
 .topbar.previewTeacher .topActions {
-  width: 112px;
-  display: grid;
-  grid-template-columns: 1fr 36px;
+  width: auto;
+  display: flex;
+  flex-wrap: nowrap;
   gap: 4px;
 }
 
 .topbar.previewTeacher .groupBadge {
-  grid-column: 1 / -1;
-  width: 100%;
+  width: clamp(84px, 26vw, 112px);
   max-width: none;
 }
 
 .topbar.previewTeacher .editToggle,
 .topbar.previewTeacher .addToggle {
-  justify-self: end;
+  flex: 0 0 auto;
 }
 
 .groupBadge {
@@ -2158,9 +2158,47 @@ button.calendarDay {
 }
 
 @media (max-width: 350px) {
+  .topbar {
+    gap: 4px;
+  }
+
+  .brand {
+    gap: 3px;
+  }
+
+  .bolt {
+    height: 27px;
+  }
+
+  .brandRoleSwitcher {
+    font-size: 13px;
+  }
+
   .topbar.previewTeacher .topActions {
-    width: 76px;
-    grid-template-columns: 36px 36px;
+    width: auto;
+    gap: 3px;
+  }
+
+  .topbar.previewTeacher .groupBadge {
+    width: 72px;
+    height: 26px;
+    padding: 0 5px;
+    font-size: 9.5px;
+  }
+
+  .topbar.previewTeacher .addToggle,
+  .topbar.previewTeacher .editToggle {
+    width: 30px;
+    height: 30px;
+    border-radius: 10px;
+  }
+
+  .topbar.previewTeacher .addToggle {
+    font-size: 22px;
+  }
+
+  .topbar.previewTeacher .editToggle {
+    font-size: 18px;
   }
 }
 
