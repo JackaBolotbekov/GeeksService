@@ -356,8 +356,10 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.teacherVideoForm \.teacherVideoDescription\s*{[^}]*min-height:\s*clamp\(112px,\s*18svh,\s*150px\)/s);
   assert.match(css, /\.teacherVideoDrop\s*{[^}]*min-height:\s*clamp\(132px,\s*22svh,\s*180px\)/s);
   assert.match(css, /\.screenKeepAlive\[hidden\]\s*{[^}]*display:\s*none !important/s);
-  assert.match(css, /\.teacherMaterialDrop\s*{[^}]*min-height:\s*58px/s);
-  assert.match(css, /\.teacherMaterialDrop \.dropIcon\s*{[^}]*width:\s*30px/s);
+  assert.match(css, /\.dropZone\.teacherMaterialDrop\s*{[^}]*min-height:\s*58px/s);
+  assert.match(css, /\.dropZone\.teacherMaterialDrop \.dropIcon\s*{[^}]*width:\s*30px/s);
+  assert.match(css, /\.dropZone\.teacherMaterialDrop strong\s*{[^}]*font-size:\s*clamp\(13px,\s*3\.6vw,\s*16px\)/s);
+  assert.match(css, /\.dropZone\.teacherMaterialDrop small\s*{[^}]*font-size:\s*10px/s);
   assert.match(css, /\.uploadMonitorCard\s*{[^}]*width:\s*100%/s);
   assert.match(css, /\.materialClear\s*{[^}]*z-index:\s*2/s);
   assert.match(css, /\.uploadActions\.teacherUploadActions\s*{[^}]*width:\s*100%;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);

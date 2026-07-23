@@ -1060,7 +1060,7 @@ button:disabled {
   min-height: clamp(132px, 22svh, 180px);
 }
 
-.teacherMaterialDrop {
+.dropZone.teacherMaterialDrop {
   min-height: 58px;
   grid-template-columns: 34px minmax(0, 1fr) 30px;
   grid-template-rows: auto auto;
@@ -1073,7 +1073,7 @@ button:disabled {
   text-align: left;
 }
 
-.teacherMaterialDrop .dropIcon {
+.dropZone.teacherMaterialDrop .dropIcon {
   grid-column: 1;
   grid-row: 1 / 3;
   width: 30px;
@@ -1084,7 +1084,7 @@ button:disabled {
   box-shadow: 2px 2px 0 #11131b;
 }
 
-.teacherMaterialDrop strong {
+.dropZone.teacherMaterialDrop strong {
   grid-column: 2;
   grid-row: 1;
   width: 100%;
@@ -1092,7 +1092,7 @@ button:disabled {
   line-height: 1.05;
 }
 
-.teacherMaterialDrop small {
+.dropZone.teacherMaterialDrop small {
   grid-column: 2;
   grid-row: 2;
   width: 100%;
