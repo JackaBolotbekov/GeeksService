@@ -117,6 +117,15 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /\.md \.zip \.pdf \.html \.pptx/);
   assert.match(app, /accept="\.md,\.markdown,\.zip,\.pdf,\.html,\.htm,\.ppt,\.pptx/);
   assert.match(app, /homeworkSubmitActions/);
+  assert.match(app, /defaultVideoTitle=\{`VibeCoding 1 \| Урок \$\{Math\.max\(1, schedule\.completedLessonCount\)\} Месяц \$\{schedule\.currentCourseMonth\}`\}/);
+  assert.match(app, /className="teacherVideoForm"/);
+  assert.match(app, /placeholder=\{"Название темы\\nДомашнее задание\\nTelegram-бот"\}/);
+  assert.match(app, /teacherUploadActions/);
+  assert.doesNotMatch(app, /Название ролика<\/span>/);
+  assert.doesNotMatch(app, /Описание и домашнее задание<\/span>/);
+  assert.doesNotMatch(app, /Доступ: по ссылке/);
+  assert.doesNotMatch(app, /Файл идёт напрямую в YouTube/);
+  assert.doesNotMatch(app, />\s*Выбрать файл\s*</);
   assert.doesNotMatch(app, /uploadCard homeworkCard/);
   assert.doesNotMatch(app, /homeworkExtra/);
   assert.doesNotMatch(app, /homeworkInputRef\.current\?\.click/);
@@ -214,6 +223,11 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.uploadActions\.homeworkSubmitActions\s*{[^}]*width:\s*100%/s);
   assert.match(css, /\.uploadActions\.homeworkSubmitActions\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
   assert.match(css, /\.homeworkSubmitActions \.uploadPrimary\s*{[^}]*width:\s*100%/s);
+  assert.match(css, /\.teacherVideoForm\s*{[^}]*background:\s*transparent;[^}]*box-shadow:\s*none/s);
+  assert.match(css, /\.teacherVideoForm \.teacherVideoDescription\s*{[^}]*min-height:\s*clamp\(112px,\s*18svh,\s*150px\)/s);
+  assert.match(css, /\.teacherVideoDrop\s*{[^}]*min-height:\s*clamp\(160px,\s*26svh,\s*220px\)/s);
+  assert.match(css, /\.uploadActions\.teacherUploadActions\s*{[^}]*width:\s*100%;[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/s);
+  assert.match(css, /\.teacherUploadActions \.uploadPrimary\s*{[^}]*width:\s*100%/s);
   assert.match(css, /\.calendarDay \.calendarLessonBadge:not\(\.transferBadge\)\s*{[^}]*right:\s*auto;[^}]*left:\s*-6px/s);
   assert.match(css, /\.profileScreen\s*{[^}]*padding:\s*0 0 112px/s);
   assert.match(css, /\.calendarCard\s*{[^}]*aspect-ratio:\s*1 \/ 1/s);

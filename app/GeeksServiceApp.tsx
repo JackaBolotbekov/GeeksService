@@ -796,6 +796,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
               isAdmin={effectiveAdmin}
               sessionToken={sessionToken}
               previewRole={rolePreviewAvailable ? testRole : null}
+              defaultVideoTitle={`VibeCoding 1 | Урок ${Math.max(1, schedule.completedLessonCount)} Месяц ${schedule.currentCourseMonth}`}
             />
           ) : visibleScreen === "profile" ? (
             <ProfileScreen
@@ -1343,15 +1344,18 @@ function HomeworkUploadScreen({
   isAdmin,
   sessionToken,
   previewRole,
+  defaultVideoTitle,
 }: {
   isAdmin: boolean;
   sessionToken: string | null;
   previewRole: TestRole | null;
+  defaultVideoTitle: string;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const homeworkInputRef = useRef<HTMLInputElement | null>(null);
+  const previousDefaultTitleRef = useRef(defaultVideoTitle);
   const [file, setFile] = useState<File | null>(null);
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(defaultVideoTitle);
   const [description, setDescription] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [phase, setPhase] = useState<UploadPhase>("idle");
@@ -1367,6 +1371,15 @@ function HomeworkUploadScreen({
   const [homeworkMessage, setHomeworkMessage] = useState<string | null>(null);
   const homeworkBusy = homeworkPhase === "submitting";
   const hasHomeworkContent = Boolean(homeworkLinks.trim() || homeworkDescription.trim() || homeworkFile);
+
+  useEffect(() => {
+    setTitle((current) => (
+      current === previousDefaultTitleRef.current || current === ""
+        ? defaultVideoTitle
+        : current
+    ));
+    previousDefaultTitleRef.current = defaultVideoTitle;
+  }, [defaultVideoTitle]);
 
   const selectFile = (nextFile: File | null) => {
     if (!nextFile) return;
@@ -1545,12 +1558,35 @@ function HomeworkUploadScreen({
 
   return (
     <section className="uploadScreen">
-      <form className="uploadCard teacherUploadCard" onSubmit={(event) => {
+      <form className="teacherVideoForm" onSubmit={(event) => {
         event.preventDefault();
         void submitUpload();
       }}>
+        <label className="uploadField">
+          <input
+            value={title}
+            disabled={busy}
+            maxLength={100}
+            aria-label="Название ролика"
+            placeholder={defaultVideoTitle}
+            onChange={(event) => setTitle(event.target.value)}
+          />
+        </label>
+
+        <label className="uploadField">
+          <textarea
+            className="teacherVideoDescription"
+            value={description}
+            disabled={busy}
+            maxLength={5000}
+            aria-label="Описание и домашнее задание"
+            placeholder={"Название темы\nДомашнее задание\nTelegram-бот"}
+            onChange={(event) => setDescription(event.target.value)}
+          />
+        </label>
+
         <label
-          className={`dropZone ${dragActive ? "active" : ""} ${file ? "hasFile" : ""}`}
+          className={`dropZone teacherVideoDrop ${dragActive ? "active" : ""} ${file ? "hasFile" : ""}`}
           onDragEnter={(event) => {
             event.preventDefault();
             setDragActive(true);
@@ -1578,33 +1614,6 @@ function HomeworkUploadScreen({
           <small>{file ? `${file.type || "video"} · ${formatBytes(file.size)}` : "или нажми, чтобы выбрать MP4 / MOV / WEBM"}</small>
         </label>
 
-        <label className="uploadField">
-          <span>Название ролика</span>
-          <input
-            value={title}
-            disabled={busy}
-            maxLength={100}
-            placeholder="Например: Урок 6 · домашнее задание"
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </label>
-
-        <label className="uploadField">
-          <span>Описание и домашнее задание</span>
-          <textarea
-            value={description}
-            disabled={busy}
-            maxLength={5000}
-            placeholder="Опиши тему урока, дедлайн, что сдать ученикам и ссылки."
-            onChange={(event) => setDescription(event.target.value)}
-          />
-        </label>
-
-        <div className="uploadMeta">
-          <span>Доступ: по ссылке</span>
-          <span>Файл идёт напрямую в YouTube</span>
-        </div>
-
         {busy && (
           <div className="uploadProgress" aria-label={`Загрузка ${progress}%`}>
             <span style={{ width: `${phase === "creating" ? 8 : progress}%` }} />
@@ -1623,10 +1632,7 @@ function HomeworkUploadScreen({
           </p>
         )}
 
-        <div className="uploadActions">
-          <button type="button" className="uploadSecondary" disabled={busy} onClick={() => inputRef.current?.click()}>
-            Выбрать файл
-          </button>
+        <div className="uploadActions teacherUploadActions">
           <button type="submit" className="uploadPrimary" disabled={busy || !file || !title.trim()}>
             {phase === "uploading" ? "Загружаю..." : "Загрузить"}
           </button>
