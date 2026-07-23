@@ -57,7 +57,7 @@ export async function createTeacherMaterial(input: TeacherMaterialInput): Promis
   const id = crypto.randomUUID();
   const key = `teacher-materials/month-${courseMonth}/lesson-${lessonNumber}/${id}-${safeObjectName(originalName)}`;
   const type = file.type || "application/octet-stream";
-  await materialFiles().put(key, await file.arrayBuffer(), {
+  await materialFiles().put(key, file.stream(), {
     httpMetadata: { contentType: type },
     customMetadata: {
       originalName,

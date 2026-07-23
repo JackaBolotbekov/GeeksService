@@ -94,6 +94,21 @@ test("teacher material validation preserves names and rejects unsafe files", asy
   );
 });
 
+test("YouTube resumable helpers recover exact offsets and retry transient failures", async () => {
+  const {
+    isRetriableYouTubeUploadStatus,
+    nextYouTubeUploadOffset,
+  } = await importTypeScriptModule("../lib/youtube-resumable.ts");
+
+  assert.equal(nextYouTubeUploadOffset("bytes=0-16777215", 0), 16777216);
+  assert.equal(nextYouTubeUploadOffset(null, 42), 42);
+  assert.equal(isRetriableYouTubeUploadStatus(0), true);
+  assert.equal(isRetriableYouTubeUploadStatus(429), true);
+  assert.equal(isRetriableYouTubeUploadStatus(503), true);
+  assert.equal(isRetriableYouTubeUploadStatus(400), false);
+  assert.equal(isRetriableYouTubeUploadStatus(401), false);
+});
+
 test("ships Geeks Service page instead of the starter preview", async () => {
   const [page, layout, packageJson] = await Promise.all([
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
@@ -233,8 +248,15 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /Открой через Telegram, чтобы ДЗ привязалось/);
   assert.match(app, /aria-disabled=\{!canOpenHomework\}/);
   assert.match(app, /uploadFileToYouTube/);
-  assert.match(app, /uploadYouTubeChunkWithRetry/);
-  assert.match(app, /isRetriableUploadError/);
+  assert.match(app, /queryYouTubeUploadStatus/);
+  assert.match(app, /bytes \*\/\$\{total\}/);
+  assert.match(app, /nextYouTubeUploadOffset\(xhr\.getResponseHeader\("Range"\)/);
+  assert.match(app, /VIDEO_UPLOAD_RETRIES = 6/);
+  assert.match(app, /VIDEO_UPLOAD_TIMEOUT_MS = 5 \* 60 \* 1000/);
+  assert.match(app, /\/api\/admin\/youtube\/access-token/);
+  assert.match(app, /uploadInFlightRef\.current/);
+  assert.match(app, /validateTeacherMaterialFile\(nextFile\)/);
+  assert.match(app, /Повторить допматериал/);
   assert.match(app, /VIDEO_CHUNK_SIZE = 16 \* 1024 \* 1024/);
   assert.match(app, /Content-Range/);
   assert.match(app, /\/api\/admin\/youtube\/upload-session/);
@@ -412,7 +434,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
 });
 
 test("includes leaderboard, homework, materials, schedule, and admin API surfaces", async () => {
-  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, teacherMaterialsRoute, homeworkRoute, scheduleRoute, adminScheduleRoute, transferScheduleRoute, homeworkStore, teacherMaterialsStore, hosting, store, schedule, schema, transferMigration, transferUpdateMigration, teacherMaterialsMigration] = await Promise.all([
+  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, youtubeTokenRoute, youtubeOAuth, teacherMaterialsRoute, homeworkRoute, scheduleRoute, adminScheduleRoute, transferScheduleRoute, homeworkStore, teacherMaterialsStore, hosting, store, schedule, schema, transferMigration, transferUpdateMigration, teacherMaterialsMigration] = await Promise.all([
     readFile(new URL("../app/api/leaderboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/[studentId]/route.ts", import.meta.url), "utf8"),
@@ -420,6 +442,8 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
     readFile(new URL("../app/api/admin/import-railway/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/avatar/[studentId]/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/youtube/upload-session/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/youtube/access-token/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/youtube-oauth.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/materials/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/homework/submit/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/schedule/route.ts", import.meta.url), "utf8"),
@@ -450,6 +474,10 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(youtubeUploadRoute, /uploadType=resumable/);
   assert.match(youtubeUploadRoute, /X-Upload-Content-Length/);
   assert.match(youtubeUploadRoute, /selfDeclaredMadeForKids:\s*false/);
+  assert.match(youtubeTokenRoute, /requireAdmin/);
+  assert.match(youtubeTokenRoute, /exchangeYouTubeRefreshToken/);
+  assert.match(youtubeOAuth, /oauth2\.googleapis\.com\/token/);
+  assert.match(youtubeOAuth, /YOUTUBE_REFRESH_TOKEN/);
   assert.match(teacherMaterialsRoute, /requireAdmin/);
   assert.match(teacherMaterialsRoute, /request\.formData/);
   assert.match(teacherMaterialsRoute, /createTeacherMaterial/);
@@ -479,6 +507,7 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(teacherMaterialsStore, /teacher-materials\/month-/);
   assert.match(teacherMaterialsStore, /originalName/);
   assert.match(teacherMaterialsStore, /validateTeacherMaterialFile/);
+  assert.match(teacherMaterialsStore, /file\.stream\(\)/);
   assert.match(hosting, /"r2":\s*"HOMEWORK_FILES"/);
   assert.match(store, /SET telegram_username = \?, avatar_url = COALESCE/);
   assert.match(store, /lastScoredAt/);

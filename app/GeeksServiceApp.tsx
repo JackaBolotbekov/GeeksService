@@ -3,8 +3,10 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { validateTeacherMaterialFile } from "@/lib/material-validation";
 import { bishkekDateKey, buildScheduleResponse, defaultTransferTarget, DEFAULT_LESSON_SCHEDULE, localDateParts, transferLessonSchedule } from "@/lib/schedule";
 import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherMaterialUploadResponse } from "@/lib/types";
+import { isRetriableYouTubeUploadStatus, nextYouTubeUploadOffset } from "@/lib/youtube-resumable";
 
 declare global {
   interface Window {
@@ -32,6 +34,11 @@ type YouTubeUploadSessionResponse = {
   accessToken: string;
   expiresIn: number;
   privacyStatus: "private" | "public" | "unlisted";
+};
+
+type YouTubeAccessTokenResponse = {
+  accessToken: string;
+  expiresIn: number;
 };
 
 type TelegramWebApp = {
@@ -76,6 +83,8 @@ type UploadChunkInput = {
 };
 
 const VIDEO_CHUNK_SIZE = 16 * 1024 * 1024;
+const VIDEO_UPLOAD_RETRIES = 6;
+const VIDEO_UPLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 const LEADERBOARD_CACHE_KEY = "geeks-service:leaderboard:v1";
 const LEADERBOARD_LIVE_INTERVAL_MS = 1400;
 
@@ -205,32 +214,69 @@ async function uploadFileToYouTube({
   file,
   uploadUrl,
   accessToken,
+  refreshAccessToken,
   onProgress,
 }: {
   file: File;
   uploadUrl: string;
   accessToken: string;
+  refreshAccessToken: () => Promise<string>;
   onProgress: (progress: number) => void;
 }): Promise<string> {
   if (file.size <= 0) throw new Error("Видео пустое");
 
   let offset = 0;
   let videoId: string | null = null;
+  let currentAccessToken = accessToken;
+  let retry = 0;
   while (offset < file.size) {
     const end = Math.min(offset + VIDEO_CHUNK_SIZE, file.size);
     const chunk = file.slice(offset, end, file.type || "application/octet-stream");
-    const result = await uploadYouTubeChunkWithRetry({
-      uploadUrl,
-      accessToken,
-      chunk,
-      start: offset,
-      end,
-      total: file.size,
-      mimeType: file.type || "application/octet-stream",
-      onProgress: (loaded) => onProgress(Math.min(99, Math.round(((offset + loaded) / file.size) * 100))),
-    });
-    offset = end;
-    if (result.videoId) videoId = result.videoId;
+    try {
+      const result = await uploadYouTubeChunk({
+        uploadUrl,
+        accessToken: currentAccessToken,
+        chunk,
+        start: offset,
+        end,
+        total: file.size,
+        mimeType: file.type || "application/octet-stream",
+        onProgress: (loaded) => onProgress(Math.min(99, Math.round(((offset + loaded) / file.size) * 100))),
+      });
+      offset = result.nextOffset;
+      if (result.videoId) videoId = result.videoId;
+      retry = 0;
+    } catch (error) {
+      const status = uploadErrorStatus(error);
+      if (status === 401) {
+        currentAccessToken = await refreshAccessToken();
+        continue;
+      }
+      if (!isRetriableYouTubeUploadStatus(status) || retry >= VIDEO_UPLOAD_RETRIES) throw error;
+
+      await uploadRetryDelay(retry);
+      retry += 1;
+      try {
+        const recovered = await queryYouTubeUploadStatus({
+          uploadUrl,
+          accessToken: currentAccessToken,
+          total: file.size,
+        });
+        if (recovered.videoId) return recovered.videoId;
+        if (recovered.nextOffset > offset) {
+          offset = recovered.nextOffset;
+          retry = 0;
+          onProgress(Math.min(99, Math.round((offset / file.size) * 100)));
+        }
+      } catch (statusError) {
+        const statusCode = uploadErrorStatus(statusError);
+        if (statusCode === 401) {
+          currentAccessToken = await refreshAccessToken();
+          continue;
+        }
+        if (!isRetriableYouTubeUploadStatus(statusCode)) throw statusError;
+      }
+    }
   }
 
   onProgress(100);
@@ -238,25 +284,15 @@ async function uploadFileToYouTube({
   return videoId;
 }
 
-async function uploadYouTubeChunkWithRetry(input: UploadChunkInput): Promise<{ videoId: string | null }> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      return await uploadYouTubeChunk(input);
-    } catch (error) {
-      lastError = error;
-      if (!isRetriableUploadError(error) || attempt === 2) break;
-      await sleep(700 * 2 ** attempt);
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error("Не удалось загрузить видео в YouTube");
-}
-
-function isRetriableUploadError(error: unknown): boolean {
-  const status = typeof error === "object" && error !== null && "status" in error
+function uploadErrorStatus(error: unknown): number {
+  return typeof error === "object" && error !== null && "status" in error
     ? Number((error as { status?: number }).status)
     : 0;
-  return status === 0 || [500, 502, 503, 504].includes(status);
+}
+
+async function uploadRetryDelay(attempt: number): Promise<void> {
+  const delay = Math.min(8000, 700 * 2 ** attempt) + Math.round(Math.random() * 350);
+  await sleep(delay);
 }
 
 function uploadYouTubeChunk({
@@ -268,10 +304,11 @@ function uploadYouTubeChunk({
   total,
   mimeType,
   onProgress,
-}: UploadChunkInput): Promise<{ videoId: string | null }> {
+}: UploadChunkInput): Promise<{ videoId: string | null; nextOffset: number }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", uploadUrl);
+    xhr.timeout = VIDEO_UPLOAD_TIMEOUT_MS;
     xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
     xhr.setRequestHeader("Content-Type", mimeType);
     xhr.setRequestHeader("Content-Range", `bytes ${start}-${end - 1}/${total}`);
@@ -279,30 +316,78 @@ function uploadYouTubeChunk({
       if (event.lengthComputable) onProgress(event.loaded);
     };
     xhr.onerror = () => {
-      const error = new Error("Не удалось загрузить кусок видео в YouTube") as Error & { status: number };
-      error.status = 0;
-      reject(error);
+      reject(createUploadError("Не удалось загрузить часть видео в YouTube", 0));
+    };
+    xhr.ontimeout = () => {
+      reject(createUploadError("YouTube слишком долго не отвечал", 0));
     };
     xhr.onload = () => {
       if (xhr.status === 308) {
-        resolve({ videoId: null });
+        resolve({
+          videoId: null,
+          nextOffset: nextYouTubeUploadOffset(xhr.getResponseHeader("Range"), end),
+        });
         return;
       }
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const data = JSON.parse(xhr.responseText || "{}") as { id?: string };
-          resolve({ videoId: data.id ?? null });
+          resolve({ videoId: data.id ?? null, nextOffset: end });
         } catch {
           reject(new Error("YouTube вернул некорректный ответ после загрузки"));
         }
         return;
       }
-      const error = new Error(`YouTube upload error ${xhr.status}`) as Error & { status: number };
-      error.status = xhr.status;
-      reject(error);
+      reject(createUploadError(`YouTube upload error ${xhr.status}`, xhr.status));
     };
     xhr.send(chunk);
   });
+}
+
+function queryYouTubeUploadStatus({
+  uploadUrl,
+  accessToken,
+  total,
+}: {
+  uploadUrl: string;
+  accessToken: string;
+  total: number;
+}): Promise<{ videoId: string | null; nextOffset: number }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", uploadUrl);
+    xhr.timeout = VIDEO_UPLOAD_TIMEOUT_MS;
+    xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
+    xhr.setRequestHeader("Content-Range", `bytes */${total}`);
+    xhr.onerror = () => reject(createUploadError("Не удалось проверить состояние загрузки YouTube", 0));
+    xhr.ontimeout = () => reject(createUploadError("YouTube слишком долго не отвечал", 0));
+    xhr.onload = () => {
+      if (xhr.status === 308) {
+        resolve({
+          videoId: null,
+          nextOffset: nextYouTubeUploadOffset(xhr.getResponseHeader("Range"), 0),
+        });
+        return;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText || "{}") as { id?: string };
+          resolve({ videoId: data.id ?? null, nextOffset: total });
+        } catch {
+          reject(createUploadError("YouTube вернул некорректный статус загрузки", xhr.status));
+        }
+        return;
+      }
+      reject(createUploadError(`YouTube status error ${xhr.status}`, xhr.status));
+    };
+    xhr.send();
+  });
+}
+
+function createUploadError(message: string, status: number): Error & { status: number } {
+  const error = new Error(message) as Error & { status: number };
+  error.status = status;
+  return error;
 }
 
 function useLockedViewportZoom() {
@@ -1360,6 +1445,7 @@ function HomeworkUploadScreen({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const materialInputRef = useRef<HTMLInputElement | null>(null);
   const homeworkInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadInFlightRef = useRef(false);
   const previousDefaultTitleRef = useRef(defaultVideoTitle);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState(defaultVideoTitle);
@@ -1371,6 +1457,7 @@ function HomeworkUploadScreen({
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [progress, setProgress] = useState(0);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [uploadedVideo, setUploadedVideo] = useState<{ id: string; url: string } | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const busy = phase === "creating" || phase === "uploading" || phase === "saving";
   const [homeworkFile, setHomeworkFile] = useState<File | null>(null);
@@ -1381,6 +1468,10 @@ function HomeworkUploadScreen({
   const [homeworkMessage, setHomeworkMessage] = useState<string | null>(null);
   const homeworkBusy = homeworkPhase === "submitting";
   const hasHomeworkContent = Boolean(homeworkLinks.trim() || homeworkDescription.trim() || homeworkFile);
+  const materialPending = Boolean(uploadedVideo && materialFile && !materialSavedName);
+  const uploadReady = uploadedVideo
+    ? materialPending
+    : Boolean(file && title.trim());
 
   useEffect(() => {
     setTitle((current) => (
@@ -1393,16 +1484,36 @@ function HomeworkUploadScreen({
 
   const selectFile = (nextFile: File | null) => {
     if (!nextFile) return;
+    const fileType = nextFile.type.toLowerCase();
+    const extension = nextFile.name.split(".").pop()?.toLowerCase() ?? "";
+    if (nextFile.size <= 0 || (!fileType.startsWith("video/") && !["mp4", "mov", "webm", "m4v", "mkv"].includes(extension))) {
+      setUploadError("Выбери видео MP4, MOV, WEBM, M4V или MKV");
+      if (inputRef.current) inputRef.current.value = "";
+      hapticNotice("warning");
+      return;
+    }
     setFile(nextFile);
     setResultUrl(null);
+    setUploadedVideo(null);
     setMaterialSavedName(null);
     setUploadError(null);
     setProgress(0);
+    setPhase("idle");
     if (!title.trim()) setTitle(fileTitle(nextFile));
   };
 
   const selectMaterialFile = (nextFile: File | null) => {
     if (!nextFile) return;
+    try {
+      validateTeacherMaterialFile(nextFile);
+    } catch (error) {
+      setMaterialFile(null);
+      setMaterialSavedName(null);
+      setUploadError(error instanceof Error ? error.message : "Некорректный файл допматериала");
+      if (materialInputRef.current) materialInputRef.current.value = "";
+      hapticNotice("warning");
+      return;
+    }
     setMaterialFile(nextFile);
     setMaterialSavedName(null);
     setUploadError(null);
@@ -1414,18 +1525,58 @@ function HomeworkUploadScreen({
     if (materialInputRef.current) materialInputRef.current.value = "";
   };
 
+  const saveTeacherMaterial = async (
+    video: { id: string; url: string },
+    material: File,
+  ): Promise<string> => {
+    if (!sessionToken) throw new Error("Нет сессии преподавателя");
+    const form = new FormData();
+    form.set("file", material);
+    form.set("lessonNumber", String(lessonNumber));
+    form.set("courseMonth", String(courseMonth));
+    form.set("videoId", video.id);
+    form.set("videoUrl", video.url);
+    const saved = await apiForm<TeacherMaterialUploadResponse>("/api/admin/materials", form, sessionToken);
+    return saved.fileName;
+  };
+
   const submitUpload = async () => {
-    if (!isAdmin || !file || !title.trim() || busy) return;
+    if (!isAdmin || busy || uploadInFlightRef.current || !uploadReady) return;
+    uploadInFlightRef.current = true;
     setUploadError(null);
-    setResultUrl(null);
-    setProgress(0);
-    setPhase("creating");
     try {
+      if (uploadedVideo) {
+        if (!materialFile || materialSavedName) return;
+        setPhase("saving");
+        if (!sessionToken && previewRole === "teachers") {
+          await sleep(180);
+          setMaterialSavedName(materialFile.name);
+          setPhase("done");
+          hapticNotice("success");
+          return;
+        }
+        try {
+          setMaterialSavedName(await saveTeacherMaterial(uploadedVideo, materialFile));
+          setPhase("done");
+          hapticNotice("success");
+        } catch (caught) {
+          setUploadError(`Допматериал не сохранён: ${caught instanceof Error ? caught.message : "ошибка загрузки"}`);
+          setPhase("error");
+          hapticNotice("warning");
+        }
+        return;
+      }
+
+      if (!file || !title.trim()) return;
+      setResultUrl(null);
+      setProgress(0);
+      setPhase("creating");
       if (!sessionToken && previewRole === "teachers") {
         await sleep(280);
         setProgress(100);
         setMaterialSavedName(materialFile?.name ?? null);
         setResultUrl("#test-video");
+        setUploadedVideo({ id: "test-video", url: "#test-video" });
         setPhase("done");
         hapticNotice("success");
         return;
@@ -1448,24 +1599,25 @@ function HomeworkUploadScreen({
         file,
         uploadUrl: session.uploadUrl,
         accessToken: session.accessToken,
+        refreshAccessToken: async () => {
+          const refreshed = await api<YouTubeAccessTokenResponse>("/api/admin/youtube/access-token", {
+            method: "POST",
+          }, sessionToken);
+          return refreshed.accessToken;
+        },
         onProgress: setProgress,
       });
       const videoUrl = `https://youtu.be/${videoId}`;
+      const completedVideo = { id: videoId, url: videoUrl };
       setResultUrl(videoUrl);
+      setUploadedVideo(completedVideo);
       if (materialFile) {
         setPhase("saving");
-        const form = new FormData();
-        form.set("file", materialFile);
-        form.set("lessonNumber", String(lessonNumber));
-        form.set("courseMonth", String(courseMonth));
-        form.set("videoId", videoId);
-        form.set("videoUrl", videoUrl);
         try {
-          const material = await apiForm<TeacherMaterialUploadResponse>("/api/admin/materials", form, sessionToken);
-          setMaterialSavedName(material.fileName);
+          setMaterialSavedName(await saveTeacherMaterial(completedVideo, materialFile));
         } catch (caught) {
           setUploadError(`Видео загружено, но допматериал не сохранён: ${caught instanceof Error ? caught.message : "ошибка загрузки"}`);
-          setPhase("done");
+          setPhase("error");
           hapticNotice("warning");
           return;
         }
@@ -1476,6 +1628,8 @@ function HomeworkUploadScreen({
       setUploadError(caught instanceof Error ? caught.message : "Не удалось загрузить видео");
       setPhase("error");
       hapticNotice("error");
+    } finally {
+      uploadInFlightRef.current = false;
     }
   };
 
@@ -1729,12 +1883,18 @@ function HomeworkUploadScreen({
         )}
 
         <div className="uploadActions teacherUploadActions">
-          <button type="submit" className="uploadPrimary" disabled={busy || !file || !title.trim()}>
+          <button type="submit" className="uploadPrimary" disabled={busy || !uploadReady}>
             {phase === "uploading"
               ? "Загружаю..."
               : phase === "saving"
                 ? "Сохраняю..."
-                : "Загрузить"}
+                : materialPending
+                  ? uploadError
+                    ? "Повторить допматериал"
+                    : "Сохранить допматериал"
+                  : uploadedVideo
+                    ? "Готово"
+                    : "Загрузить"}
           </button>
         </div>
       </form>
