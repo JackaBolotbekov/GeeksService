@@ -64,6 +64,12 @@ export interface HomeworkSubmitResponse {
   fileName: string | null;
 }
 
+export interface TeacherMaterialUploadResponse {
+  ok: boolean;
+  materialId: string;
+  fileName: string;
+}
+
 export interface LessonScheduleInput {
   lessonNumber: number;
   scheduledAt: string;

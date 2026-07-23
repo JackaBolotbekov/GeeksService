@@ -4,7 +4,7 @@
 
 import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { bishkekDateKey, buildScheduleResponse, defaultTransferTarget, DEFAULT_LESSON_SCHEDULE, localDateParts, transferLessonSchedule } from "@/lib/schedule";
-import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView } from "@/lib/types";
+import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherMaterialUploadResponse } from "@/lib/types";
 
 declare global {
   interface Window {
@@ -16,7 +16,7 @@ declare global {
 
 type LoadState = "loading" | "ready" | "error";
 type ActiveScreen = "leaderboard" | "homeworkUpload" | "profile";
-type UploadPhase = "idle" | "creating" | "uploading" | "done" | "error";
+type UploadPhase = "idle" | "creating" | "uploading" | "saving" | "done" | "error";
 type HomeworkSubmitPhase = "idle" | "submitting" | "done" | "error";
 type TestRole = "service" | "students" | "teachers";
 
@@ -797,6 +797,8 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
               sessionToken={sessionToken}
               previewRole={rolePreviewAvailable ? testRole : null}
               defaultVideoTitle={`VibeCoding 1 | Урок ${Math.max(1, schedule.completedLessonCount)} Месяц ${schedule.currentCourseMonth}`}
+              lessonNumber={Math.max(1, schedule.completedLessonCount)}
+              courseMonth={schedule.currentCourseMonth}
             />
           ) : visibleScreen === "profile" ? (
             <ProfileScreen
@@ -1345,24 +1347,32 @@ function HomeworkUploadScreen({
   sessionToken,
   previewRole,
   defaultVideoTitle,
+  lessonNumber,
+  courseMonth,
 }: {
   isAdmin: boolean;
   sessionToken: string | null;
   previewRole: TestRole | null;
   defaultVideoTitle: string;
+  lessonNumber: number;
+  courseMonth: number;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const materialInputRef = useRef<HTMLInputElement | null>(null);
   const homeworkInputRef = useRef<HTMLInputElement | null>(null);
   const previousDefaultTitleRef = useRef(defaultVideoTitle);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState(defaultVideoTitle);
   const [description, setDescription] = useState("");
   const [dragActive, setDragActive] = useState(false);
+  const [materialFile, setMaterialFile] = useState<File | null>(null);
+  const [materialDragActive, setMaterialDragActive] = useState(false);
+  const [materialSavedName, setMaterialSavedName] = useState<string | null>(null);
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [progress, setProgress] = useState(0);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const busy = phase === "creating" || phase === "uploading";
+  const busy = phase === "creating" || phase === "uploading" || phase === "saving";
   const [homeworkFile, setHomeworkFile] = useState<File | null>(null);
   const [homeworkLinks, setHomeworkLinks] = useState("");
   const [homeworkDescription, setHomeworkDescription] = useState("");
@@ -1385,9 +1395,23 @@ function HomeworkUploadScreen({
     if (!nextFile) return;
     setFile(nextFile);
     setResultUrl(null);
+    setMaterialSavedName(null);
     setUploadError(null);
     setProgress(0);
     if (!title.trim()) setTitle(fileTitle(nextFile));
+  };
+
+  const selectMaterialFile = (nextFile: File | null) => {
+    if (!nextFile) return;
+    setMaterialFile(nextFile);
+    setMaterialSavedName(null);
+    setUploadError(null);
+  };
+
+  const clearMaterialFile = () => {
+    setMaterialFile(null);
+    setMaterialSavedName(null);
+    if (materialInputRef.current) materialInputRef.current.value = "";
   };
 
   const submitUpload = async () => {
@@ -1400,6 +1424,7 @@ function HomeworkUploadScreen({
       if (!sessionToken && previewRole === "teachers") {
         await sleep(280);
         setProgress(100);
+        setMaterialSavedName(materialFile?.name ?? null);
         setResultUrl("#test-video");
         setPhase("done");
         hapticNotice("success");
@@ -1425,7 +1450,26 @@ function HomeworkUploadScreen({
         accessToken: session.accessToken,
         onProgress: setProgress,
       });
-      setResultUrl(`https://youtu.be/${videoId}`);
+      const videoUrl = `https://youtu.be/${videoId}`;
+      setResultUrl(videoUrl);
+      if (materialFile) {
+        setPhase("saving");
+        const form = new FormData();
+        form.set("file", materialFile);
+        form.set("lessonNumber", String(lessonNumber));
+        form.set("courseMonth", String(courseMonth));
+        form.set("videoId", videoId);
+        form.set("videoUrl", videoUrl);
+        try {
+          const material = await apiForm<TeacherMaterialUploadResponse>("/api/admin/materials", form, sessionToken);
+          setMaterialSavedName(material.fileName);
+        } catch (caught) {
+          setUploadError(`Видео загружено, но допматериал не сохранён: ${caught instanceof Error ? caught.message : "ошибка загрузки"}`);
+          setPhase("done");
+          hapticNotice("warning");
+          return;
+        }
+      }
       setPhase("done");
       hapticNotice("success");
     } catch (caught) {
@@ -1614,10 +1658,61 @@ function HomeworkUploadScreen({
           <small>{file ? `${file.type || "video"} · ${formatBytes(file.size)}` : "или нажми, чтобы выбрать MP4 / MOV / WEBM"}</small>
         </label>
 
+        <div
+          className={`dropZone teacherMaterialDrop ${materialDragActive ? "active" : ""} ${materialFile ? "hasFile" : ""}`}
+          onDragEnter={(event) => {
+            event.preventDefault();
+            setMaterialDragActive(true);
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setMaterialDragActive(true);
+          }}
+          onDragLeave={() => setMaterialDragActive(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setMaterialDragActive(false);
+            selectMaterialFile(event.dataTransfer.files.item(0));
+          }}
+        >
+          <input
+            ref={materialInputRef}
+            type="file"
+            accept=".ppt,.pptx,.pdf,.doc,.docx,.xls,.xlsx,.zip,.md,.markdown,.html,.htm,.txt,.csv,.json,.png,.jpg,.jpeg,.webp"
+            disabled={busy}
+            aria-label="Необязательный допматериал"
+            onChange={(event) => selectMaterialFile(event.target.files?.item(0) ?? null)}
+          />
+          <span className="dropIcon">+</span>
+          <strong>{materialFile ? materialFile.name : "Допматериалы"}</strong>
+          <small>{materialFile ? formatBytes(materialFile.size) : "необязательно · PPTX / PDF / ZIP"}</small>
+          {materialFile && (
+            <button
+              type="button"
+              className="materialClear"
+              disabled={busy}
+              aria-label="Убрать допматериал"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                clearMaterialFile();
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+
         {busy && (
           <div className="uploadProgress" aria-label={`Загрузка ${progress}%`}>
-            <span style={{ width: `${phase === "creating" ? 8 : progress}%` }} />
-            <strong>{phase === "creating" ? "Готовлю YouTube..." : `${progress}%`}</strong>
+            <span style={{ width: `${phase === "creating" ? 8 : phase === "saving" ? 100 : progress}%` }} />
+            <strong>
+              {phase === "creating"
+                ? "Готовлю YouTube..."
+                : phase === "saving"
+                  ? "Сохраняю допматериал..."
+                  : `${progress}%`}
+            </strong>
           </div>
         )}
 
@@ -1629,12 +1724,17 @@ function HomeworkUploadScreen({
             ) : (
               <>Видео готово: <a href={resultUrl} target="_blank" rel="noreferrer">{resultUrl}</a></>
             )}
+            {materialSavedName && <><br />Допматериал сохранён: {materialSavedName}</>}
           </p>
         )}
 
         <div className="uploadActions teacherUploadActions">
           <button type="submit" className="uploadPrimary" disabled={busy || !file || !title.trim()}>
-            {phase === "uploading" ? "Загружаю..." : "Загрузить"}
+            {phase === "uploading"
+              ? "Загружаю..."
+              : phase === "saving"
+                ? "Сохраняю..."
+                : "Загрузить"}
           </button>
         </div>
       </form>
