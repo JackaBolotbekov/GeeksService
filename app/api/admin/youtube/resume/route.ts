@@ -6,7 +6,11 @@ import {
 } from "@/lib/upload-jobs";
 import type { YouTubeUploadResumeResponse } from "@/lib/types";
 import { exchangeYouTubeRefreshToken } from "@/lib/youtube-oauth";
-import { queryYouTubeUploadSession } from "@/lib/youtube-upload-recovery";
+import {
+  findRecentlyUploadedVideo,
+  queryYouTubeUploadSession,
+  YouTubeUploadSessionUnavailableError,
+} from "@/lib/youtube-upload-recovery";
 
 type ResumeUploadRequest = {
   jobId?: string;
@@ -41,6 +45,7 @@ export async function POST(request: Request) {
       });
       return Response.json({
         completed: true,
+        state: "done",
         job: current,
         video,
         uploadUrl: null,
@@ -51,38 +56,40 @@ export async function POST(request: Request) {
     }
 
     const token = await exchangeYouTubeRefreshToken();
-    const status = await queryYouTubeUploadSession({
-      uploadUrl: current.uploadUrl,
-      accessToken: token.accessToken,
-      fileSize: current.fileSize,
-    });
-    if (status.completed) {
-      const videoUrl = `https://youtu.be/${status.videoId}`;
-      const video = await upsertTeacherLessonVideo({
-        lessonNumber: current.lessonNumber,
-        courseMonth: current.courseMonth,
-        videoId: status.videoId,
-        videoUrl,
+    let status;
+    try {
+      status = await queryYouTubeUploadSession({
+        uploadUrl: current.uploadUrl,
+        accessToken: token.accessToken,
+        fileSize: current.fileSize,
+      });
+    } catch (error) {
+      if (!(error instanceof YouTubeUploadSessionUnavailableError)) throw error;
+      const recovered = await findRecentlyUploadedVideo({
+        accessToken: token.accessToken,
         title: current.title,
+        createdAt: current.createdAt,
+        jobId: current.id,
       });
-      const job = await updateTeacherUploadJob(current.id, {
-        phase: "done",
-        progress: 100,
-        confirmedOffset: current.fileSize,
-        videoId: status.videoId,
-        videoUrl,
-        errorMessage: null,
+      if (recovered) {
+        return completeUpload(current, recovered.videoId, recovered.videoUrl);
+      }
+      return finalizingUpload(current);
+    }
+    if (status.completed) {
+      return completeUpload(current, status.videoId, `https://youtu.be/${status.videoId}`);
+    }
+    if (status.nextOffset >= current.fileSize) {
+      const recovered = await findRecentlyUploadedVideo({
+        accessToken: token.accessToken,
+        title: current.title,
+        createdAt: current.createdAt,
+        jobId: current.id,
       });
-      if (!job) return jsonError("Загрузка уже закрыта", 409);
-      return Response.json({
-        completed: true,
-        job,
-        video,
-        uploadUrl: null,
-        accessToken: null,
-        expiresIn: null,
-        nextOffset: current.fileSize,
-      } satisfies YouTubeUploadResumeResponse);
+      if (recovered) {
+        return completeUpload(current, recovered.videoId, recovered.videoUrl);
+      }
+      return finalizingUpload(current);
     }
 
     const progress = Math.min(99, Math.round((status.nextOffset / current.fileSize) * 100));
@@ -96,6 +103,7 @@ export async function POST(request: Request) {
     if (!job) return jsonError("Загрузка уже закрыта", 409);
     return Response.json({
       completed: false,
+      state: "uploading",
       job,
       video: null,
       uploadUrl: current.uploadUrl,
@@ -109,4 +117,59 @@ export async function POST(request: Request) {
       502,
     );
   }
+}
+
+async function completeUpload(
+  current: NonNullable<Awaited<ReturnType<typeof teacherUploadJobInternal>>>,
+  videoId: string,
+  videoUrl: string,
+): Promise<Response> {
+  const video = await upsertTeacherLessonVideo({
+    lessonNumber: current.lessonNumber,
+    courseMonth: current.courseMonth,
+    videoId,
+    videoUrl,
+    title: current.title,
+  });
+  const job = await updateTeacherUploadJob(current.id, {
+    phase: "done",
+    progress: 100,
+    confirmedOffset: current.fileSize,
+    videoId,
+    videoUrl,
+    errorMessage: null,
+  });
+  if (!job) return jsonError("Загрузка уже закрыта", 409);
+  return Response.json({
+    completed: true,
+    state: "done",
+    job,
+    video,
+    uploadUrl: null,
+    accessToken: null,
+    expiresIn: null,
+    nextOffset: current.fileSize,
+  } satisfies YouTubeUploadResumeResponse);
+}
+
+async function finalizingUpload(
+  current: NonNullable<Awaited<ReturnType<typeof teacherUploadJobInternal>>>,
+): Promise<Response> {
+  const job = await updateTeacherUploadJob(current.id, {
+    phase: "finalizing",
+    progress: 100,
+    confirmedOffset: current.fileSize,
+    errorMessage: null,
+  });
+  if (!job) return jsonError("Загрузка уже закрыта", 409);
+  return Response.json({
+    completed: false,
+    state: "processing",
+    job,
+    video: null,
+    uploadUrl: null,
+    accessToken: null,
+    expiresIn: null,
+    nextOffset: current.fileSize,
+  } satisfies YouTubeUploadResumeResponse);
 }

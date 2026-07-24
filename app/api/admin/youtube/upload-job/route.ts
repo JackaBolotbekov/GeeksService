@@ -26,7 +26,7 @@ type UpdateJobRequest = {
   diagnostic?: Omit<TeacherUploadChunkDiagnostic, "id" | "jobId" | "createdAt">;
 };
 
-const mutablePhases = new Set(["creating", "uploading", "paused", "saving", "done", "error", "cancelled"]);
+const mutablePhases = new Set(["creating", "uploading", "finalizing", "paused", "saving", "done", "error", "cancelled"]);
 
 export async function GET(request: Request) {
   const identity = await requireAdmin(request);

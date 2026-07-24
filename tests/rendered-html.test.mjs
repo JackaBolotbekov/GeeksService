@@ -5,10 +5,15 @@ import ts from "typescript";
 
 async function importTypeScriptModule(path) {
   const source = await readFile(new URL(path, import.meta.url), "utf8");
-  const selfContainedSource = source.replace(
-    /^import \{ LESSON_COUNT,.*\} from "\.\/types";\r?\n/,
-    "const LESSON_COUNT = 12;\n",
-  );
+  const selfContainedSource = source
+    .replace(
+      /^import \{ LESSON_COUNT,.*\} from "\.\/types";\r?\n/,
+      "const LESSON_COUNT = 12;\n",
+    )
+    .replace(
+      /^import \{ nextYouTubeUploadOffset \} from "\.\/youtube-resumable";\r?\n/,
+      "const nextYouTubeUploadOffset = (range, fallback = 0) => { const match = range?.match(/bytes=\\d+-(\\d+)/i); return match ? Number(match[1]) + 1 : fallback; };\n",
+    );
   const compiled = ts.transpileModule(selfContainedSource, {
     compilerOptions: {
       module: ts.ModuleKind.ESNext,
@@ -115,6 +120,98 @@ test("YouTube resumable helpers recover exact offsets and retry transient failur
   assert.equal(initialYouTubeUploadChunkSize(100, "4g"), YOUTUBE_UPLOAD_MAX_CHUNK_SIZE);
   assert.equal(initialYouTubeUploadChunkSize(undefined, "3g"), 16 * 1024 * 1024);
   assert.equal(YOUTUBE_UPLOAD_MIN_CHUNK_SIZE, 8 * 1024 * 1024);
+});
+
+test("YouTube recovery identifies the exact tagged upload and handles closed sessions", async () => {
+  const originalFetch = globalThis.fetch;
+  const jobId = "job-123";
+  const taggedVideoId = "TaggedVid01";
+  const olderVideoId = "OlderVideo1";
+  const requests = [];
+  try {
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      requests.push(url);
+      if (url.startsWith("https://www.googleapis.com/upload/")) {
+        return new Response(null, { status: 410 });
+      }
+      if (url.includes("/channels?")) {
+        return Response.json({
+          items: [{ contentDetails: { relatedPlaylists: { uploads: "uploads-playlist" } } }],
+        });
+      }
+      if (url.includes("/playlistItems?")) {
+        return Response.json({
+          items: [
+            {
+              snippet: {
+                title: "VibeCoding 1 | Урок 7 Месяц 1",
+                publishedAt: "2026-07-24T10:03:00.000Z",
+                resourceId: { videoId: taggedVideoId },
+              },
+              contentDetails: { videoId: taggedVideoId },
+            },
+            {
+              snippet: {
+                title: "VibeCoding 1 | Урок 7 Месяц 1",
+                publishedAt: "2026-07-24T10:01:00.000Z",
+                resourceId: { videoId: olderVideoId },
+              },
+              contentDetails: { videoId: olderVideoId },
+            },
+          ],
+        });
+      }
+      if (url.includes("/videos?")) {
+        return Response.json({
+          items: [
+            {
+              id: olderVideoId,
+              snippet: {
+                title: "VibeCoding 1 | Урок 7 Месяц 1",
+                tags: ["some-other-upload"],
+              },
+              status: { uploadStatus: "processed" },
+            },
+            {
+              id: taggedVideoId,
+              snippet: {
+                title: "VibeCoding 1 | Урок 7 Месяц 1",
+                tags: [`geeks-upload-${jobId}`],
+              },
+              status: { uploadStatus: "uploaded" },
+            },
+          ],
+        });
+      }
+      return new Response(null, { status: 404 });
+    };
+
+    const {
+      findRecentlyUploadedVideo,
+      queryYouTubeUploadSession,
+      youtubeUploadJobTag,
+    } = await importTypeScriptModule("../lib/youtube-upload-recovery.ts");
+    assert.equal(youtubeUploadJobTag(jobId), `geeks-upload-${jobId}`);
+    const recovered = await findRecentlyUploadedVideo({
+      accessToken: "token",
+      title: "VibeCoding 1 | Урок 7 Месяц 1",
+      createdAt: "2026-07-24T10:00:00.000Z",
+      jobId,
+    });
+    assert.equal(recovered?.videoId, taggedVideoId);
+    assert.match(requests.find((url) => url.includes("/videos?")) ?? "", /processingDetails/);
+    await assert.rejects(
+      queryYouTubeUploadSession({
+        uploadUrl: "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&upload_id=x",
+        accessToken: "token",
+        fileSize: 1024,
+      }),
+      (error) => error?.name === "YouTubeUploadSessionUnavailableError" && error?.status === 410,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("ships Geeks Service page instead of the starter preview", async () => {
@@ -272,6 +369,11 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /\/api\/admin\/youtube\/resume/);
   assert.match(app, /reconcileUpload/);
   assert.match(app, /createPausedUploadError/);
+  assert.match(app, /createFinalizingUploadError/);
+  assert.match(app, /phase === "finalizing"/);
+  assert.match(app, /reconcileFinalizingUpload/);
+  assert.match(app, /window\.setInterval\(\(\) => void reconcileFinalizingUpload\(\), 6_000\)/);
+  assert.match(app, /session\.reused/);
   assert.match(app, /phase === "paused"/);
   assert.match(app, /"Продолжить"/);
   assert.match(app, /window\.addEventListener\("online"/);
@@ -524,7 +626,7 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(youtubeUploadJobRoute, /currentTeacherUploadJob/);
   assert.match(youtubeUploadJobs, /teacher_upload_jobs/);
   assert.match(youtubeUploadJobs, /WHERE NOT EXISTS/);
-  assert.match(youtubeUploadJobs, /WHERE phase IN \('creating', 'uploading', 'paused', 'saving'\)/);
+  assert.match(youtubeUploadJobs, /WHERE phase IN \('creating', 'uploading', 'finalizing', 'paused', 'saving'\)/);
   assert.match(youtubeUploadJobs, /const staleAfterMs = 45_000/);
   assert.match(youtubeUploadJobs, /upload_url/);
   assert.match(youtubeUploadJobs, /confirmed_offset/);
@@ -535,11 +637,18 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(youtubeReconcileRoute, /queryYouTubeUploadSession/);
   assert.match(youtubeReconcileRoute, /verifyYouTubeVideo/);
   assert.match(youtubeReconcileRoute, /upsertTeacherLessonVideo/);
+  assert.match(youtubeReconcileRoute, /findRecentlyUploadedVideo/);
+  assert.match(youtubeReconcileRoute, /jobId:\s*current\.id/);
   assert.match(youtubeResumeRoute, /requireAdmin/);
   assert.match(youtubeResumeRoute, /queryYouTubeUploadSession/);
   assert.match(youtubeResumeRoute, /body\.fileName !== current\.fileName/);
   assert.match(youtubeResumeRoute, /allowResume:\s*true/);
   assert.match(youtubeRecovery, /Content-Range/);
+  assert.match(youtubeRecovery, /processingDetails/);
+  assert.match(youtubeRecovery, /youtubeUploadJobTag/);
+  assert.match(youtubeUploadRoute, /reusableTeacherUploadJob/);
+  assert.match(youtubeUploadRoute, /reused:\s*true/);
+  assert.match(youtubeUploadRoute, /tags:\s*\[youtubeUploadJobTag\(jobId\)\]/);
   assert.match(youtubeRecovery, /youtube\.com\/oembed/);
   assert.match(youtubeTokenRoute, /requireAdmin/);
   assert.match(youtubeTokenRoute, /exchangeYouTubeRefreshToken/);

@@ -3,9 +3,11 @@ import { getEnv } from "@/lib/env";
 import {
   ActiveUploadJobError,
   createTeacherUploadJob,
+  reusableTeacherUploadJob,
   updateTeacherUploadJob,
 } from "@/lib/upload-jobs";
 import { exchangeYouTubeRefreshToken, hasYouTubeUploadConfiguration } from "@/lib/youtube-oauth";
+import { youtubeUploadJobTag } from "@/lib/youtube-upload-recovery";
 
 type PrivacyStatus = "private" | "public" | "unlisted";
 
@@ -66,6 +68,24 @@ export async function POST(request: Request) {
 
   let jobId: string | null = null;
   try {
+    const reusable = await reusableTeacherUploadJob({
+      title,
+      fileName,
+      fileSize,
+      lessonNumber,
+      courseMonth,
+      uploaderTelegramId: identity.telegramUserId,
+    });
+    if (reusable) {
+      return Response.json({
+        reused: true,
+        uploadUrl: null,
+        accessToken: null,
+        expiresIn: null,
+        privacyStatus,
+        jobId: reusable.id,
+      });
+    }
     const job = await createTeacherUploadJob({
       title,
       fileName,
@@ -78,6 +98,7 @@ export async function POST(request: Request) {
     const token = await exchangeYouTubeRefreshToken();
     const uploadUrl = await createResumableUploadSession({
       accessToken: token.accessToken,
+      jobId: job.id,
       title,
       description,
       fileSize,
@@ -93,6 +114,7 @@ export async function POST(request: Request) {
     });
 
     return Response.json({
+      reused: false,
       uploadUrl,
       accessToken: token.accessToken,
       expiresIn: token.expiresIn,
@@ -127,6 +149,7 @@ function positiveInteger(value: number | undefined, fallback: number): number {
 
 async function createResumableUploadSession({
   accessToken,
+  jobId,
   title,
   description,
   fileSize,
@@ -134,6 +157,7 @@ async function createResumableUploadSession({
   privacyStatus,
 }: {
   accessToken: string;
+  jobId: string;
   title: string;
   description: string;
   fileSize: number;
@@ -154,6 +178,7 @@ async function createResumableUploadSession({
         title,
         description,
         categoryId,
+        tags: [youtubeUploadJobTag(jobId)],
       },
       status: {
         privacyStatus,

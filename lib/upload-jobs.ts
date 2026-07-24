@@ -58,8 +58,8 @@ export type TeacherUploadJobInternal = TeacherUploadJob & {
   createdAt: string;
 };
 
-const activePhases = ["creating", "uploading", "paused", "saving"] as const;
-const heartbeatPhases = ["creating", "uploading", "saving"] as const;
+const activePhases = ["creating", "uploading", "finalizing", "paused", "saving"] as const;
+const heartbeatPhases = ["creating", "uploading", "finalizing", "saving"] as const;
 const staleAfterMs = 45_000;
 let initPromise: Promise<void> | null = null;
 
@@ -153,7 +153,7 @@ export async function createTeacherUploadJob(input: CreateUploadJobInput): Promi
     WHERE NOT EXISTS (
       SELECT 1
       FROM teacher_upload_jobs
-      WHERE phase IN ('creating', 'uploading', 'paused', 'saving')
+      WHERE phase IN ('creating', 'uploading', 'finalizing', 'paused', 'saving')
     )
   `).bind(
     id,
@@ -182,6 +182,40 @@ export async function currentTeacherUploadJob(): Promise<TeacherUploadJob | null
   return row ? toUploadJob(row) : null;
 }
 
+export async function reusableTeacherUploadJob(input: {
+  title: string;
+  fileName: string;
+  fileSize: number;
+  lessonNumber: number;
+  courseMonth: number;
+  uploaderTelegramId: string;
+}): Promise<TeacherUploadJob | null> {
+  await ensureTeacherUploadJobsDatabase();
+  const row = await d1().prepare(`
+    SELECT *
+    FROM teacher_upload_jobs
+    WHERE title = ?
+      AND file_name = ?
+      AND file_size = ?
+      AND lesson_number = ?
+      AND course_month = ?
+      AND uploader_telegram_id = ?
+      AND phase IN ('uploading', 'finalizing', 'paused', 'saving', 'done', 'error')
+      AND (upload_url IS NOT NULL OR video_id IS NOT NULL)
+      AND created_at >= datetime('now', '-24 hours')
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).bind(
+    input.title.slice(0, 100),
+    input.fileName.slice(0, 240),
+    input.fileSize,
+    positiveInteger(input.lessonNumber, 1),
+    positiveInteger(input.courseMonth, 1),
+    input.uploaderTelegramId,
+  ).first<UploadJobRow>();
+  return row ? toUploadJob(row) : null;
+}
+
 export async function teacherUploadJobInternal(id: string): Promise<TeacherUploadJobInternal | null> {
   await ensureTeacherUploadJobsDatabase();
   const row = await uploadJobRow(id);
@@ -199,7 +233,7 @@ export async function latestRecoverableTeacherUploadJob(title: string): Promise<
   const row = await d1().prepare(`
     SELECT *
     FROM teacher_upload_jobs
-    WHERE title = ? AND phase IN ('creating', 'uploading', 'paused', 'saving', 'error')
+    WHERE title = ? AND phase IN ('creating', 'uploading', 'finalizing', 'paused', 'saving', 'error')
     ORDER BY created_at DESC
     LIMIT 1
   `).bind(title.slice(0, 100)).first<UploadJobRow>();
@@ -221,10 +255,10 @@ export async function updateTeacherUploadJob(
     ? requestedProgress
     : Math.max(current.progress, requestedProgress);
   const requestedPhase = input.phase ?? current.phase;
-  const phase = current.phase === "paused"
+  const phase = (current.phase === "paused" || current.phase === "finalizing")
     && requestedPhase === "uploading"
     && !input.allowResume
-    ? "paused"
+    ? current.phase
     : current.phase === "done" && requestedPhase !== "done"
       ? "done"
       : requestedPhase;
@@ -357,7 +391,7 @@ export async function cancelTeacherUploadJob(id: string): Promise<void> {
   await d1().prepare(`
     UPDATE teacher_upload_jobs
     SET phase = 'cancelled', updated_at = ?
-    WHERE id = ? AND phase IN ('creating', 'uploading', 'paused', 'saving')
+    WHERE id = ? AND phase IN ('creating', 'uploading', 'finalizing', 'paused', 'saving')
   `).bind(new Date().toISOString(), id).run();
 }
 
@@ -410,7 +444,7 @@ function toInternalUploadJob(row: UploadJobRow): TeacherUploadJobInternal {
 }
 
 function phaseOf(value: string): Exclude<TeacherUploadJobPhase, "interrupted"> {
-  return ["creating", "uploading", "paused", "saving", "done", "error", "cancelled"].includes(value)
+  return ["creating", "uploading", "finalizing", "paused", "saving", "done", "error", "cancelled"].includes(value)
     ? value as Exclude<TeacherUploadJobPhase, "interrupted">
     : "error";
 }

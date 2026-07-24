@@ -73,6 +73,7 @@ export interface TeacherMaterialUploadResponse {
 export type TeacherUploadJobPhase =
   | "creating"
   | "uploading"
+  | "finalizing"
   | "paused"
   | "saving"
   | "done"
@@ -120,6 +121,7 @@ export interface TeacherUploadChunkDiagnostic {
 
 export interface YouTubeUploadResumeResponse {
   completed: boolean;
+  state: "uploading" | "processing" | "done";
   job: TeacherUploadJob;
   video: TeacherLessonVideo | null;
   uploadUrl: string | null;
@@ -142,6 +144,7 @@ export interface TeacherLessonVideo {
 export interface YouTubeUploadReconcileResponse {
   recovered: boolean;
   nextOffset: number | null;
+  state: "uploading" | "processing" | "done";
   video: TeacherLessonVideo | null;
   job: TeacherUploadJob | null;
 }

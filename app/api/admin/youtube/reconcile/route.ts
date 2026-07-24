@@ -7,7 +7,12 @@ import {
 } from "@/lib/upload-jobs";
 import type { YouTubeUploadReconcileResponse } from "@/lib/types";
 import { exchangeYouTubeRefreshToken } from "@/lib/youtube-oauth";
-import { queryYouTubeUploadSession, verifyYouTubeVideo } from "@/lib/youtube-upload-recovery";
+import {
+  findRecentlyUploadedVideo,
+  queryYouTubeUploadSession,
+  verifyYouTubeVideo,
+  YouTubeUploadSessionUnavailableError,
+} from "@/lib/youtube-upload-recovery";
 
 type ReconcileRequest = {
   jobId?: string;
@@ -26,6 +31,7 @@ export async function GET(request: Request) {
   return Response.json({
     recovered: Boolean(video),
     nextOffset: null,
+    state: video ? "done" : "uploading",
     video,
     job: null,
   } satisfies YouTubeUploadReconcileResponse);
@@ -73,6 +79,7 @@ async function attachKnownVideo(body: ReconcileRequest): Promise<Response> {
   return Response.json({
     recovered: true,
     nextOffset: null,
+    state: "done",
     video,
     job,
   } satisfies YouTubeUploadReconcileResponse);
@@ -92,6 +99,7 @@ async function reconcileUploadJob(jobId: string): Promise<Response> {
     return Response.json({
       recovered: true,
       nextOffset: null,
+      state: "done",
       video,
       job: current,
     } satisfies YouTubeUploadReconcileResponse);
@@ -99,32 +107,64 @@ async function reconcileUploadJob(jobId: string): Promise<Response> {
   if (!current.uploadUrl) return jsonError("У этой загрузки нет сохранённой resumable-сессии", 409);
 
   const token = await exchangeYouTubeRefreshToken();
-  const status = await queryYouTubeUploadSession({
-    uploadUrl: current.uploadUrl,
-    accessToken: token.accessToken,
-    fileSize: current.fileSize,
-  });
+  let status;
+  try {
+    status = await queryYouTubeUploadSession({
+      uploadUrl: current.uploadUrl,
+      accessToken: token.accessToken,
+      fileSize: current.fileSize,
+    });
+  } catch (error) {
+    if (!(error instanceof YouTubeUploadSessionUnavailableError)) throw error;
+    const recovered = await findRecentlyUploadedVideo({
+      accessToken: token.accessToken,
+      title: current.title,
+      createdAt: current.createdAt,
+      jobId: current.id,
+    });
+    if (recovered) return completeRecoveredUpload(current, recovered.videoId, recovered.videoUrl);
+    return markUploadFinalizing(current);
+  }
   if (!status.completed) {
+    if (status.nextOffset >= current.fileSize) {
+      const recovered = await findRecentlyUploadedVideo({
+        accessToken: token.accessToken,
+        title: current.title,
+        createdAt: current.createdAt,
+        jobId: current.id,
+      });
+      if (recovered) return completeRecoveredUpload(current, recovered.videoId, recovered.videoUrl);
+      return markUploadFinalizing(current);
+    }
     const progress = Math.min(99, Math.round((status.nextOffset / current.fileSize) * 100));
     const job = await updateTeacherUploadJob(current.id, {
       phase: "uploading",
       progress,
       confirmedOffset: status.nextOffset,
       errorMessage: null,
+      allowResume: true,
     });
     return Response.json({
       recovered: false,
       nextOffset: status.nextOffset,
+      state: "uploading",
       video: null,
       job,
     } satisfies YouTubeUploadReconcileResponse);
   }
 
-  const videoUrl = `https://youtu.be/${status.videoId}`;
+  return completeRecoveredUpload(current, status.videoId, `https://youtu.be/${status.videoId}`);
+}
+
+async function completeRecoveredUpload(
+  current: NonNullable<Awaited<ReturnType<typeof teacherUploadJobInternal>>>,
+  videoId: string,
+  videoUrl: string,
+): Promise<Response> {
   const video = await upsertTeacherLessonVideo({
     lessonNumber: current.lessonNumber,
     courseMonth: current.courseMonth,
-    videoId: status.videoId,
+    videoId,
     videoUrl,
     title: current.title,
   });
@@ -132,14 +172,33 @@ async function reconcileUploadJob(jobId: string): Promise<Response> {
     phase: "done",
     progress: 100,
     confirmedOffset: current.fileSize,
-    videoId: status.videoId,
+    videoId,
     videoUrl,
     errorMessage: null,
   });
   return Response.json({
     recovered: true,
     nextOffset: null,
+    state: "done",
     video,
+    job,
+  } satisfies YouTubeUploadReconcileResponse);
+}
+
+async function markUploadFinalizing(
+  current: NonNullable<Awaited<ReturnType<typeof teacherUploadJobInternal>>>,
+): Promise<Response> {
+  const job = await updateTeacherUploadJob(current.id, {
+    phase: "finalizing",
+    progress: 100,
+    confirmedOffset: current.fileSize,
+    errorMessage: null,
+  });
+  return Response.json({
+    recovered: false,
+    nextOffset: current.fileSize,
+    state: "processing",
+    video: null,
     job,
   } satisfies YouTubeUploadReconcileResponse);
 }

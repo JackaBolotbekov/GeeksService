@@ -4,7 +4,43 @@ type YouTubeVideoResponse = {
   id?: string;
   snippet?: {
     title?: string;
+    tags?: string[];
   };
+  status?: {
+    uploadStatus?: string;
+    failureReason?: string;
+    rejectionReason?: string;
+  };
+};
+
+type YouTubeVideosResponse = {
+  items?: YouTubeVideoResponse[];
+};
+
+type YouTubeChannelsResponse = {
+  items?: Array<{
+    contentDetails?: {
+      relatedPlaylists?: {
+        uploads?: string;
+      };
+    };
+  }>;
+};
+
+type YouTubePlaylistItemsResponse = {
+  items?: Array<{
+    snippet?: {
+      title?: string;
+      publishedAt?: string;
+      resourceId?: {
+        videoId?: string;
+      };
+    };
+    contentDetails?: {
+      videoId?: string;
+      videoPublishedAt?: string;
+    };
+  }>;
 };
 
 type OEmbedResponse = {
@@ -16,6 +52,16 @@ type OEmbedResponse = {
 export type YouTubeUploadStatus =
   | { completed: true; videoId: string }
   | { completed: false; nextOffset: number };
+
+export class YouTubeUploadSessionUnavailableError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super("Сессия загрузки YouTube уже закрыта");
+    this.name = "YouTubeUploadSessionUnavailableError";
+    this.status = status;
+  }
+}
 
 export async function queryYouTubeUploadSession({
   uploadUrl,
@@ -50,9 +96,104 @@ export async function queryYouTubeUploadSession({
   }
 
   if (response.status === 404 || response.status === 410) {
-    throw new Error("Сессия загрузки YouTube истекла, и её результат уже нельзя восстановить автоматически");
+    throw new YouTubeUploadSessionUnavailableError(response.status);
   }
   throw new Error(`YouTube не подтвердил загрузку: HTTP ${response.status}`);
+}
+
+export async function findRecentlyUploadedVideo({
+  accessToken,
+  title,
+  createdAt,
+  jobId,
+}: {
+  accessToken: string;
+  title: string;
+  createdAt: string;
+  jobId?: string;
+}): Promise<{ videoId: string; videoUrl: string; title: string } | null> {
+  const channelsResponse = await fetch(
+    "https://www.googleapis.com/youtube/v3/channels?part=contentDetails&mine=true",
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!channelsResponse.ok) return null;
+  const channels = await channelsResponse.json().catch(() => null) as YouTubeChannelsResponse | null;
+  const uploadsPlaylistId = channels?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads?.trim();
+  if (!uploadsPlaylistId) return null;
+
+  const playlistResponse = await fetch(
+    `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&maxResults=25&playlistId=${encodeURIComponent(uploadsPlaylistId)}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!playlistResponse.ok) return null;
+  const playlist = await playlistResponse.json().catch(() => null) as YouTubePlaylistItemsResponse | null;
+  const createdTime = new Date(createdAt).getTime();
+  const earliestTime = Number.isFinite(createdTime) ? createdTime - 15 * 60 * 1000 : Date.now() - 24 * 60 * 60 * 1000;
+  const candidates = (playlist?.items ?? [])
+    .map((item) => {
+      const videoId = cleanVideoId(item.contentDetails?.videoId ?? item.snippet?.resourceId?.videoId);
+      const publishedAt = item.contentDetails?.videoPublishedAt ?? item.snippet?.publishedAt;
+      const publishedTime = publishedAt ? new Date(publishedAt).getTime() : Number.NaN;
+      return {
+        videoId,
+        title: item.snippet?.title?.trim() ?? "",
+        publishedTime,
+      };
+    })
+    .filter((item) => (
+      item.videoId
+      && item.title === title
+      && Number.isFinite(item.publishedTime)
+      && item.publishedTime >= earliestTime
+    ))
+    .sort((left, right) => left.publishedTime - right.publishedTime);
+
+  const candidateIds = candidates
+    .map((candidate) => candidate.videoId)
+    .filter((videoId): videoId is string => Boolean(videoId));
+  if (candidateIds.length === 0) return null;
+
+  const marker = jobId ? youtubeUploadJobTag(jobId) : null;
+  if (marker) {
+    const videosResponse = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?part=snippet,status,processingDetails&id=${encodeURIComponent(candidateIds.join(","))}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (videosResponse.ok) {
+      const videos = await videosResponse.json().catch(() => null) as YouTubeVideosResponse | null;
+      const exact = (videos?.items ?? []).find((video) => (
+        cleanVideoId(video.id)
+        && video.snippet?.title?.trim() === title
+        && video.snippet?.tags?.includes(marker)
+        && video.status?.uploadStatus !== "deleted"
+        && video.status?.uploadStatus !== "failed"
+        && video.status?.uploadStatus !== "rejected"
+      ));
+      const exactId = cleanVideoId(exact?.id);
+      if (exactId) {
+        return {
+          videoId: exactId,
+          videoUrl: `https://youtu.be/${exactId}`,
+          title: exact?.snippet?.title?.trim() ?? title,
+        };
+      }
+    }
+  }
+
+  const match = candidates[0];
+  return match?.videoId
+    ? {
+      videoId: match.videoId,
+      videoUrl: `https://youtu.be/${match.videoId}`,
+      title: match.title,
+    }
+    : null;
+}
+
+export function youtubeUploadJobTag(jobId: string): string {
+  const cleaned = jobId.trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+  if (!cleaned) throw new Error("Некорректный ID загрузки YouTube");
+  return `geeks-upload-${cleaned}`;
 }
 
 export async function verifyYouTubeVideo(videoId: string): Promise<{
