@@ -1,5 +1,9 @@
 import { env } from "cloudflare:workers";
-import type { TeacherUploadJob, TeacherUploadJobPhase } from "./types";
+import type {
+  TeacherUploadChunkDiagnostic,
+  TeacherUploadJob,
+  TeacherUploadJobPhase,
+} from "./types";
 
 type UploadJobRow = {
   id: string;
@@ -9,6 +13,8 @@ type UploadJobRow = {
   lesson_number: number;
   course_month: number;
   upload_url: string | null;
+  confirmed_offset: number;
+  chunk_size: number | null;
   progress: number;
   phase: string;
   video_id: string | null;
@@ -35,16 +41,25 @@ type UpdateUploadJobInput = {
   videoUrl?: string | null;
   errorMessage?: string | null;
   uploadUrl?: string | null;
+  confirmedOffset?: number;
+  chunkSize?: number | null;
   lessonNumber?: number;
   courseMonth?: number;
+  allowResume?: boolean;
 };
+
+export type UploadChunkDiagnosticInput = Omit<
+  TeacherUploadChunkDiagnostic,
+  "id" | "jobId" | "createdAt"
+>;
 
 export type TeacherUploadJobInternal = TeacherUploadJob & {
   uploadUrl: string | null;
   createdAt: string;
 };
 
-const activePhases = ["creating", "uploading", "saving"] as const;
+const activePhases = ["creating", "uploading", "paused", "saving"] as const;
+const heartbeatPhases = ["creating", "uploading", "saving"] as const;
 const staleAfterMs = 45_000;
 let initPromise: Promise<void> | null = null;
 
@@ -61,25 +76,55 @@ export class ActiveUploadJobError extends Error {
 }
 
 export async function ensureTeacherUploadJobsDatabase(): Promise<void> {
-  initPromise ??= d1().prepare(`
-    CREATE TABLE IF NOT EXISTS teacher_upload_jobs (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      file_name TEXT NOT NULL,
-      file_size INTEGER NOT NULL,
-      lesson_number INTEGER NOT NULL DEFAULT 1,
-      course_month INTEGER NOT NULL DEFAULT 1,
-      upload_url TEXT,
-      progress INTEGER NOT NULL DEFAULT 0,
-      phase TEXT NOT NULL DEFAULT 'creating',
-      video_id TEXT,
-      video_url TEXT,
-      error_message TEXT,
-      uploader_telegram_id TEXT NOT NULL,
-      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-    )
-  `).run().then(() => undefined);
+  initPromise ??= (async () => {
+    await d1().prepare(`
+      CREATE TABLE IF NOT EXISTS teacher_upload_jobs (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        file_size INTEGER NOT NULL,
+        lesson_number INTEGER NOT NULL DEFAULT 1,
+        course_month INTEGER NOT NULL DEFAULT 1,
+        upload_url TEXT,
+        confirmed_offset INTEGER NOT NULL DEFAULT 0,
+        chunk_size INTEGER,
+        progress INTEGER NOT NULL DEFAULT 0,
+        phase TEXT NOT NULL DEFAULT 'creating',
+        video_id TEXT,
+        video_url TEXT,
+        error_message TEXT,
+        uploader_telegram_id TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run();
+    await addColumnIfMissing(
+      "ALTER TABLE teacher_upload_jobs ADD COLUMN confirmed_offset INTEGER NOT NULL DEFAULT 0",
+    );
+    await addColumnIfMissing(
+      "ALTER TABLE teacher_upload_jobs ADD COLUMN chunk_size INTEGER",
+    );
+    await d1().prepare(`
+      CREATE TABLE IF NOT EXISTS teacher_upload_chunk_events (
+        id TEXT PRIMARY KEY,
+        job_id TEXT NOT NULL REFERENCES teacher_upload_jobs(id) ON DELETE CASCADE,
+        start_offset INTEGER NOT NULL,
+        end_offset INTEGER NOT NULL,
+        confirmed_offset INTEGER NOT NULL,
+        chunk_size INTEGER NOT NULL,
+        elapsed_ms INTEGER NOT NULL,
+        speed_bps INTEGER NOT NULL,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        http_status INTEGER NOT NULL DEFAULT 0,
+        outcome TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `).run();
+    await d1().prepare(`
+      CREATE INDEX IF NOT EXISTS teacher_upload_chunk_events_job_created_idx
+      ON teacher_upload_chunk_events(job_id, created_at)
+    `).run();
+  })();
   return initPromise;
 }
 
@@ -108,7 +153,7 @@ export async function createTeacherUploadJob(input: CreateUploadJobInput): Promi
     WHERE NOT EXISTS (
       SELECT 1
       FROM teacher_upload_jobs
-      WHERE phase IN ('creating', 'uploading', 'saving')
+      WHERE phase IN ('creating', 'uploading', 'paused', 'saving')
     )
   `).bind(
     id,
@@ -143,12 +188,18 @@ export async function teacherUploadJobInternal(id: string): Promise<TeacherUploa
   return row ? toInternalUploadJob(row) : null;
 }
 
+export async function teacherUploadJob(id: string): Promise<TeacherUploadJob | null> {
+  await ensureTeacherUploadJobsDatabase();
+  const row = await uploadJobRow(id);
+  return row ? toUploadJob(row) : null;
+}
+
 export async function latestRecoverableTeacherUploadJob(title: string): Promise<TeacherUploadJob | null> {
   await ensureTeacherUploadJobsDatabase();
   const row = await d1().prepare(`
     SELECT *
     FROM teacher_upload_jobs
-    WHERE title = ? AND phase IN ('creating', 'uploading', 'saving', 'error')
+    WHERE title = ? AND phase IN ('creating', 'uploading', 'paused', 'saving', 'error')
     ORDER BY created_at DESC
     LIMIT 1
   `).bind(title.slice(0, 100)).first<UploadJobRow>();
@@ -163,16 +214,34 @@ export async function updateTeacherUploadJob(
   const current = await uploadJobRow(id);
   if (!current || current.phase === "cancelled") return null;
 
-  const progress = input.progress === undefined
+  const requestedProgress = input.progress === undefined
     ? current.progress
-    : Math.max(current.progress, Math.max(0, Math.min(100, Math.round(input.progress))));
-  const phase = input.phase ?? current.phase;
+    : Math.max(0, Math.min(100, Math.round(input.progress)));
+  const progress = input.phase === "paused" || input.allowResume
+    ? requestedProgress
+    : Math.max(current.progress, requestedProgress);
+  const requestedPhase = input.phase ?? current.phase;
+  const phase = current.phase === "paused"
+    && requestedPhase === "uploading"
+    && !input.allowResume
+    ? "paused"
+    : current.phase === "done" && requestedPhase !== "done"
+      ? "done"
+      : requestedPhase;
   const videoId = input.videoId === undefined ? current.video_id : cleanNullable(input.videoId);
   const videoUrl = input.videoUrl === undefined ? current.video_url : cleanNullable(input.videoUrl);
   const errorMessage = input.errorMessage === undefined
     ? current.error_message
     : cleanNullable(input.errorMessage)?.slice(0, 500) ?? null;
   const uploadUrl = input.uploadUrl === undefined ? current.upload_url : cleanNullable(input.uploadUrl);
+  const confirmedOffset = input.confirmedOffset === undefined
+    ? current.confirmed_offset
+    : Math.max(current.confirmed_offset, boundedInteger(input.confirmedOffset, 0, current.file_size));
+  const chunkSize = input.chunkSize === undefined
+    ? current.chunk_size
+    : input.chunkSize === null
+      ? null
+      : boundedInteger(input.chunkSize, 1, current.file_size);
   const lessonNumber = input.lessonNumber === undefined
     ? positiveInteger(current.lesson_number, 1)
     : positiveInteger(input.lessonNumber, 1);
@@ -184,7 +253,8 @@ export async function updateTeacherUploadJob(
   await d1().prepare(`
     UPDATE teacher_upload_jobs
     SET progress = ?, phase = ?, video_id = ?, video_url = ?, error_message = ?,
-        upload_url = ?, lesson_number = ?, course_month = ?, updated_at = ?
+        upload_url = ?, confirmed_offset = ?, chunk_size = ?,
+        lesson_number = ?, course_month = ?, updated_at = ?
     WHERE id = ?
   `).bind(
     progress,
@@ -193,6 +263,8 @@ export async function updateTeacherUploadJob(
     videoUrl,
     errorMessage,
     uploadUrl,
+    confirmedOffset,
+    chunkSize,
     lessonNumber,
     courseMonth,
     now,
@@ -203,12 +275,89 @@ export async function updateTeacherUploadJob(
   return updated ? toUploadJob(updated) : null;
 }
 
+export async function recordTeacherUploadChunkDiagnostic(
+  jobId: string,
+  input: UploadChunkDiagnosticInput,
+): Promise<void> {
+  await ensureTeacherUploadJobsDatabase();
+  const job = await uploadJobRow(jobId);
+  if (!job) return;
+  const startOffset = boundedInteger(input.startOffset, 0, job.file_size);
+  const endOffset = boundedInteger(input.endOffset, startOffset, job.file_size);
+  const confirmedOffset = boundedInteger(input.confirmedOffset, 0, job.file_size);
+  const chunkSize = boundedInteger(input.chunkSize, 1, job.file_size);
+  const outcome = ["confirmed", "completed", "retry", "status"].includes(input.outcome)
+    ? input.outcome
+    : "retry";
+  await d1().prepare(`
+    INSERT INTO teacher_upload_chunk_events (
+      id, job_id, start_offset, end_offset, confirmed_offset, chunk_size,
+      elapsed_ms, speed_bps, retry_count, http_status, outcome, created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).bind(
+    crypto.randomUUID(),
+    jobId,
+    startOffset,
+    endOffset,
+    confirmedOffset,
+    chunkSize,
+    boundedInteger(input.elapsedMs, 0, 86_400_000),
+    boundedInteger(input.speedBps, 0, Number.MAX_SAFE_INTEGER),
+    boundedInteger(input.retryCount, 0, 100),
+    boundedInteger(input.httpStatus, 0, 999),
+    outcome,
+    new Date().toISOString(),
+  ).run();
+}
+
+export async function listTeacherUploadChunkDiagnostics(
+  jobId: string,
+  limit = 120,
+): Promise<TeacherUploadChunkDiagnostic[]> {
+  await ensureTeacherUploadJobsDatabase();
+  const rows = await d1().prepare(`
+    SELECT *
+    FROM teacher_upload_chunk_events
+    WHERE job_id = ?
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).bind(jobId, boundedInteger(limit, 1, 500)).all<{
+    id: string;
+    job_id: string;
+    start_offset: number;
+    end_offset: number;
+    confirmed_offset: number;
+    chunk_size: number;
+    elapsed_ms: number;
+    speed_bps: number;
+    retry_count: number;
+    http_status: number;
+    outcome: string;
+    created_at: string;
+  }>();
+  return rows.results.map((row) => ({
+    id: row.id,
+    jobId: row.job_id,
+    startOffset: row.start_offset,
+    endOffset: row.end_offset,
+    confirmedOffset: row.confirmed_offset,
+    chunkSize: row.chunk_size,
+    elapsedMs: row.elapsed_ms,
+    speedBps: row.speed_bps,
+    retryCount: row.retry_count,
+    httpStatus: row.http_status,
+    outcome: diagnosticOutcome(row.outcome),
+    createdAt: parseSqlDate(row.created_at).toISOString(),
+  }));
+}
+
 export async function cancelTeacherUploadJob(id: string): Promise<void> {
   await ensureTeacherUploadJobsDatabase();
   await d1().prepare(`
     UPDATE teacher_upload_jobs
     SET phase = 'cancelled', updated_at = ?
-    WHERE id = ? AND phase IN ('creating', 'uploading', 'saving')
+    WHERE id = ? AND phase IN ('creating', 'uploading', 'paused', 'saving')
   `).bind(new Date().toISOString(), id).run();
 }
 
@@ -231,7 +380,7 @@ async function uploadJobRow(id: string): Promise<UploadJobRow | null> {
 
 function toUploadJob(row: UploadJobRow): TeacherUploadJob {
   const updatedAt = parseSqlDate(row.updated_at);
-  const isStale = activePhases.includes(row.phase as (typeof activePhases)[number])
+  const isStale = heartbeatPhases.includes(row.phase as (typeof heartbeatPhases)[number])
     && Date.now() - updatedAt.getTime() > staleAfterMs;
   return {
     id: row.id,
@@ -240,6 +389,8 @@ function toUploadJob(row: UploadJobRow): TeacherUploadJob {
     fileSize: row.file_size,
     lessonNumber: positiveInteger(row.lesson_number, 1),
     courseMonth: positiveInteger(row.course_month, 1),
+    confirmedOffset: Math.max(0, Math.min(row.file_size, Number(row.confirmed_offset) || 0)),
+    chunkSize: row.chunk_size && row.chunk_size > 0 ? row.chunk_size : null,
     progress: row.progress,
     phase: isStale ? "interrupted" : phaseOf(row.phase),
     videoId: row.video_id,
@@ -259,7 +410,7 @@ function toInternalUploadJob(row: UploadJobRow): TeacherUploadJobInternal {
 }
 
 function phaseOf(value: string): Exclude<TeacherUploadJobPhase, "interrupted"> {
-  return ["creating", "uploading", "saving", "done", "error", "cancelled"].includes(value)
+  return ["creating", "uploading", "paused", "saving", "done", "error", "cancelled"].includes(value)
     ? value as Exclude<TeacherUploadJobPhase, "interrupted">
     : "error";
 }
@@ -277,4 +428,23 @@ function cleanNullable(value: string | null | undefined): string | null {
 
 function positiveInteger(value: number, fallback: number): number {
   return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function boundedInteger(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+async function addColumnIfMissing(statement: string): Promise<void> {
+  try {
+    await d1().prepare(statement).run();
+  } catch (error) {
+    if (!String(error).toLowerCase().includes("duplicate column")) throw error;
+  }
+}
+
+function diagnosticOutcome(value: string): TeacherUploadChunkDiagnostic["outcome"] {
+  return ["confirmed", "completed", "retry", "status"].includes(value)
+    ? value as TeacherUploadChunkDiagnostic["outcome"]
+    : "retry";
 }

@@ -73,6 +73,7 @@ export interface TeacherMaterialUploadResponse {
 export type TeacherUploadJobPhase =
   | "creating"
   | "uploading"
+  | "paused"
   | "saving"
   | "done"
   | "error"
@@ -86,6 +87,8 @@ export interface TeacherUploadJob {
   fileSize: number;
   lessonNumber: number;
   courseMonth: number;
+  confirmedOffset: number;
+  chunkSize: number | null;
   progress: number;
   phase: TeacherUploadJobPhase;
   videoId: string | null;
@@ -97,6 +100,32 @@ export interface TeacherUploadJob {
 
 export interface TeacherUploadJobResponse {
   job: TeacherUploadJob | null;
+  diagnostics?: TeacherUploadChunkDiagnostic[];
+}
+
+export interface TeacherUploadChunkDiagnostic {
+  id: string;
+  jobId: string;
+  startOffset: number;
+  endOffset: number;
+  confirmedOffset: number;
+  chunkSize: number;
+  elapsedMs: number;
+  speedBps: number;
+  retryCount: number;
+  httpStatus: number;
+  outcome: "confirmed" | "completed" | "retry" | "status";
+  createdAt: string;
+}
+
+export interface YouTubeUploadResumeResponse {
+  completed: boolean;
+  job: TeacherUploadJob;
+  video: TeacherLessonVideo | null;
+  uploadUrl: string | null;
+  accessToken: string | null;
+  expiresIn: number | null;
+  nextOffset: number;
 }
 
 export interface TeacherLessonVideo {

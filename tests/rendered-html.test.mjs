@@ -269,7 +269,14 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.doesNotMatch(app, /nextAdaptiveYouTubeUploadChunkSize/);
   assert.doesNotMatch(app, /smallerYouTubeUploadChunkSize/);
   assert.match(app, /\/api\/admin\/youtube\/reconcile/);
+  assert.match(app, /\/api\/admin\/youtube\/resume/);
   assert.match(app, /reconcileUpload/);
+  assert.match(app, /createPausedUploadError/);
+  assert.match(app, /phase === "paused"/);
+  assert.match(app, /"Продолжить"/);
+  assert.match(app, /window\.addEventListener\("online"/);
+  assert.match(app, /confirmedOffset:\s*diagnostic\.confirmedOffset/);
+  assert.match(app, /diagnostic,/);
   assert.match(app, /lessonNumber,\s*courseMonth/s);
   assert.match(app, /Content-Range/);
   assert.match(app, /\/api\/admin\/youtube\/upload-session/);
@@ -459,7 +466,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
 });
 
 test("includes leaderboard, homework, materials, schedule, and admin API surfaces", async () => {
-  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, youtubeUploadJobRoute, youtubeReconcileRoute, youtubeUploadJobs, youtubeRecovery, youtubeTokenRoute, youtubeOAuth, teacherMaterialsRoute, homeworkRoute, scheduleRoute, adminScheduleRoute, transferScheduleRoute, homeworkStore, teacherMaterialsStore, lessonVideosStore, hosting, store, schedule, schema, transferMigration, transferUpdateMigration, teacherMaterialsMigration, teacherUploadJobsMigration, recoveryMigration] = await Promise.all([
+  const [leaderboardRoute, adminRoute, studentRoute, telegramRoute, importRoute, avatarRoute, youtubeUploadRoute, youtubeUploadJobRoute, youtubeReconcileRoute, youtubeResumeRoute, youtubeUploadJobs, youtubeRecovery, youtubeTokenRoute, youtubeOAuth, teacherMaterialsRoute, homeworkRoute, scheduleRoute, adminScheduleRoute, transferScheduleRoute, homeworkStore, teacherMaterialsStore, lessonVideosStore, hosting, store, schedule, schema, transferMigration, transferUpdateMigration, teacherMaterialsMigration, teacherUploadJobsMigration, recoveryMigration, resumableStateMigration] = await Promise.all([
     readFile(new URL("../app/api/leaderboard/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/students/[studentId]/route.ts", import.meta.url), "utf8"),
@@ -469,6 +476,7 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
     readFile(new URL("../app/api/admin/youtube/upload-session/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/youtube/upload-job/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/youtube/reconcile/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/youtube/resume/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/upload-jobs.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/youtube-upload-recovery.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/admin/youtube/access-token/route.ts", import.meta.url), "utf8"),
@@ -490,6 +498,7 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
     readFile(new URL("../drizzle/0005_large_doctor_faustus.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0006_tense_sunset_bain.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0007_hot_piledriver.sql", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0008_hot_scalphunter.sql", import.meta.url), "utf8"),
   ]);
 
   assert.match(leaderboardRoute, /listStudents/);
@@ -515,12 +524,21 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(youtubeUploadJobRoute, /currentTeacherUploadJob/);
   assert.match(youtubeUploadJobs, /teacher_upload_jobs/);
   assert.match(youtubeUploadJobs, /WHERE NOT EXISTS/);
-  assert.match(youtubeUploadJobs, /WHERE phase IN \('creating', 'uploading', 'saving'\)/);
+  assert.match(youtubeUploadJobs, /WHERE phase IN \('creating', 'uploading', 'paused', 'saving'\)/);
   assert.match(youtubeUploadJobs, /const staleAfterMs = 45_000/);
   assert.match(youtubeUploadJobs, /upload_url/);
+  assert.match(youtubeUploadJobs, /confirmed_offset/);
+  assert.match(youtubeUploadJobs, /teacher_upload_chunk_events/);
+  assert.match(youtubeUploadJobs, /recordTeacherUploadChunkDiagnostic/);
+  assert.match(youtubeUploadJobs, /listTeacherUploadChunkDiagnostics/);
+  assert.match(youtubeUploadJobRoute, /searchParams\.get\("diagnostics"\) === "1"/);
   assert.match(youtubeReconcileRoute, /queryYouTubeUploadSession/);
   assert.match(youtubeReconcileRoute, /verifyYouTubeVideo/);
   assert.match(youtubeReconcileRoute, /upsertTeacherLessonVideo/);
+  assert.match(youtubeResumeRoute, /requireAdmin/);
+  assert.match(youtubeResumeRoute, /queryYouTubeUploadSession/);
+  assert.match(youtubeResumeRoute, /body\.fileName !== current\.fileName/);
+  assert.match(youtubeResumeRoute, /allowResume:\s*true/);
   assert.match(youtubeRecovery, /Content-Range/);
   assert.match(youtubeRecovery, /youtube\.com\/oembed/);
   assert.match(youtubeTokenRoute, /requireAdmin/);
@@ -603,6 +621,7 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(schema, /teacher_materials/);
   assert.match(schema, /teacherUploadJobs/);
   assert.match(schema, /teacher_upload_jobs/);
+  assert.match(schema, /teacherUploadChunkEvents/);
   assert.match(schema, /teacherLessonVideos/);
   assert.match(transferMigration, /CREATE TABLE `lesson_schedule_transfers`/);
   assert.match(transferMigration, /lesson_schedule_transfers_original_unique/);
@@ -614,6 +633,9 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(teacherUploadJobsMigration, /`phase` text DEFAULT 'creating' NOT NULL/);
   assert.match(recoveryMigration, /CREATE TABLE `teacher_lesson_videos`/);
   assert.match(recoveryMigration, /ADD `upload_url` text/);
+  assert.match(resumableStateMigration, /CREATE TABLE `teacher_upload_chunk_events`/);
+  assert.match(resumableStateMigration, /ADD `confirmed_offset` integer/);
+  assert.match(resumableStateMigration, /ADD `chunk_size` integer/);
 });
 
 test("admin score picker stays in one compact row", async () => {

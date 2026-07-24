@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const students = sqliteTable("students", {
   id: text("id").primaryKey(),
@@ -65,6 +65,8 @@ export const teacherUploadJobs = sqliteTable("teacher_upload_jobs", {
   lessonNumber: integer("lesson_number").notNull().default(1),
   courseMonth: integer("course_month").notNull().default(1),
   uploadUrl: text("upload_url"),
+  confirmedOffset: integer("confirmed_offset").notNull().default(0),
+  chunkSize: integer("chunk_size"),
   progress: integer("progress").notNull().default(0),
   phase: text("phase").notNull().default("creating"),
   videoId: text("video_id"),
@@ -74,6 +76,23 @@ export const teacherUploadJobs = sqliteTable("teacher_upload_jobs", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const teacherUploadChunkEvents = sqliteTable("teacher_upload_chunk_events", {
+  id: text("id").primaryKey(),
+  jobId: text("job_id").notNull().references(() => teacherUploadJobs.id, { onDelete: "cascade" }),
+  startOffset: integer("start_offset").notNull(),
+  endOffset: integer("end_offset").notNull(),
+  confirmedOffset: integer("confirmed_offset").notNull(),
+  chunkSize: integer("chunk_size").notNull(),
+  elapsedMs: integer("elapsed_ms").notNull(),
+  speedBps: integer("speed_bps").notNull(),
+  retryCount: integer("retry_count").notNull().default(0),
+  httpStatus: integer("http_status").notNull().default(0),
+  outcome: text("outcome").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  jobCreatedIdx: index("teacher_upload_chunk_events_job_created_idx").on(table.jobId, table.createdAt),
+}));
 
 export const teacherLessonVideos = sqliteTable("teacher_lesson_videos", {
   id: text("id").primaryKey(),

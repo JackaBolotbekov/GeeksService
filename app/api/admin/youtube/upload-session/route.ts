@@ -18,6 +18,7 @@ type UploadSessionRequest = {
   privacyStatus?: PrivacyStatus;
   lessonNumber?: number;
   courseMonth?: number;
+  chunkSize?: number;
 };
 
 type GoogleErrorResponse = {
@@ -45,6 +46,7 @@ export async function POST(request: Request) {
     : "unlisted";
   const lessonNumber = positiveInteger(body?.lessonNumber, 1);
   const courseMonth = positiveInteger(body?.courseMonth, 1);
+  const chunkSize = positiveInteger(body?.chunkSize, 32 * 1024 * 1024);
 
   if (!title) return jsonError("Название ролика обязательно");
   if (!fileName) return jsonError("Не указано имя видеофайла");
@@ -86,6 +88,8 @@ export async function POST(request: Request) {
       phase: "uploading",
       progress: 0,
       uploadUrl,
+      chunkSize: Math.min(fileSize, chunkSize),
+      confirmedOffset: 0,
     });
 
     return Response.json({

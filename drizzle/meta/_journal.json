@@ -57,6 +57,13 @@
       "when": 1784871433198,
       "tag": "0007_hot_piledriver",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1784874754959,
+      "tag": "0008_hot_scalphunter",
+      "breakpoints": true
     }
   ]
 }

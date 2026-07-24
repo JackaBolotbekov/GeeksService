@@ -64,6 +64,7 @@ async function attachKnownVideo(body: ReconcileRequest): Promise<Response> {
       courseMonth,
       phase: "done",
       progress: 100,
+      confirmedOffset: matchingJob.fileSize,
       videoId: verified.videoId,
       videoUrl: verified.videoUrl,
       errorMessage: null,
@@ -108,6 +109,7 @@ async function reconcileUploadJob(jobId: string): Promise<Response> {
     const job = await updateTeacherUploadJob(current.id, {
       phase: "uploading",
       progress,
+      confirmedOffset: status.nextOffset,
       errorMessage: null,
     });
     return Response.json({
@@ -129,6 +131,7 @@ async function reconcileUploadJob(jobId: string): Promise<Response> {
   const job = await updateTeacherUploadJob(current.id, {
     phase: "done",
     progress: 100,
+    confirmedOffset: current.fileSize,
     videoId: status.videoId,
     videoUrl,
     errorMessage: null,
