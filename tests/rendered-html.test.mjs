@@ -96,8 +96,13 @@ test("teacher material validation preserves names and rejects unsafe files", asy
 
 test("YouTube resumable helpers recover exact offsets and retry transient failures", async () => {
   const {
+    initialYouTubeUploadChunkSize,
     isRetriableYouTubeUploadStatus,
+    nextAdaptiveYouTubeUploadChunkSize,
     nextYouTubeUploadOffset,
+    smallerYouTubeUploadChunkSize,
+    YOUTUBE_UPLOAD_MAX_CHUNK_SIZE,
+    YOUTUBE_UPLOAD_MIN_CHUNK_SIZE,
   } = await importTypeScriptModule("../lib/youtube-resumable.ts");
 
   assert.equal(nextYouTubeUploadOffset("bytes=0-16777215", 0), 16777216);
@@ -107,6 +112,20 @@ test("YouTube resumable helpers recover exact offsets and retry transient failur
   assert.equal(isRetriableYouTubeUploadStatus(503), true);
   assert.equal(isRetriableYouTubeUploadStatus(400), false);
   assert.equal(isRetriableYouTubeUploadStatus(401), false);
+  assert.equal(initialYouTubeUploadChunkSize(1, "4g"), 8 * 1024 * 1024);
+  assert.equal(initialYouTubeUploadChunkSize(30, "4g"), 64 * 1024 * 1024);
+  assert.equal(initialYouTubeUploadChunkSize(100, "4g"), YOUTUBE_UPLOAD_MAX_CHUNK_SIZE);
+  assert.equal(initialYouTubeUploadChunkSize(undefined, "3g"), 16 * 1024 * 1024);
+  assert.equal(smallerYouTubeUploadChunkSize(128 * 1024 * 1024), 64 * 1024 * 1024);
+  assert.equal(smallerYouTubeUploadChunkSize(YOUTUBE_UPLOAD_MIN_CHUNK_SIZE), YOUTUBE_UPLOAD_MIN_CHUNK_SIZE);
+  assert.equal(
+    nextAdaptiveYouTubeUploadChunkSize(32 * 1024 * 1024, 32 * 1024 * 1024, 2_000),
+    64 * 1024 * 1024,
+  );
+  assert.equal(
+    nextAdaptiveYouTubeUploadChunkSize(32 * 1024 * 1024, 32 * 1024 * 1024, 80_000),
+    16 * 1024 * 1024,
+  );
 });
 
 test("ships Geeks Service page instead of the starter preview", async () => {
@@ -257,7 +276,9 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /uploadInFlightRef\.current/);
   assert.match(app, /validateTeacherMaterialFile\(nextFile\)/);
   assert.match(app, /Повторить допматериал/);
-  assert.match(app, /VIDEO_CHUNK_SIZE = 16 \* 1024 \* 1024/);
+  assert.match(app, /initialYouTubeUploadChunkSize/);
+  assert.match(app, /nextAdaptiveYouTubeUploadChunkSize/);
+  assert.match(app, /smallerYouTubeUploadChunkSize/);
   assert.match(app, /Content-Range/);
   assert.match(app, /\/api\/admin\/youtube\/upload-session/);
   assert.match(app, /className="screenKeepAlive"/);

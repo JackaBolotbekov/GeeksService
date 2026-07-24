@@ -6,7 +6,13 @@ import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } f
 import { validateTeacherMaterialFile } from "@/lib/material-validation";
 import { bishkekDateKey, buildScheduleResponse, defaultTransferTarget, DEFAULT_LESSON_SCHEDULE, localDateParts, transferLessonSchedule } from "@/lib/schedule";
 import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherMaterialUploadResponse, TeacherUploadJob, TeacherUploadJobResponse } from "@/lib/types";
-import { isRetriableYouTubeUploadStatus, nextYouTubeUploadOffset } from "@/lib/youtube-resumable";
+import {
+  initialYouTubeUploadChunkSize,
+  isRetriableYouTubeUploadStatus,
+  nextAdaptiveYouTubeUploadChunkSize,
+  nextYouTubeUploadOffset,
+  smallerYouTubeUploadChunkSize,
+} from "@/lib/youtube-resumable";
 
 declare global {
   interface Window {
@@ -83,7 +89,6 @@ type UploadChunkInput = {
   onProgress: (loaded: number) => void;
 };
 
-const VIDEO_CHUNK_SIZE = 16 * 1024 * 1024;
 const VIDEO_UPLOAD_RETRIES = 6;
 const VIDEO_UPLOAD_TIMEOUT_MS = 5 * 60 * 1000;
 const LEADERBOARD_CACHE_KEY = "geeks-service:leaderboard:v1";
@@ -256,9 +261,21 @@ async function uploadFileToYouTube({
   let videoId: string | null = null;
   let currentAccessToken = accessToken;
   let retry = 0;
+  const connection = (
+    navigator as Navigator & {
+      connection?: { downlink?: number; effectiveType?: string };
+    }
+  ).connection;
+  let chunkSize = initialYouTubeUploadChunkSize(
+    connection?.downlink,
+    connection?.effectiveType,
+  );
+
   while (offset < file.size) {
-    const end = Math.min(offset + VIDEO_CHUNK_SIZE, file.size);
+    const end = Math.min(offset + chunkSize, file.size);
     const chunk = file.slice(offset, end, file.type || "application/octet-stream");
+    const chunkStartedAt = performance.now();
+    const chunkStartOffset = offset;
     try {
       const result = await uploadYouTubeChunk({
         uploadUrl,
@@ -271,6 +288,11 @@ async function uploadFileToYouTube({
         onProgress: (loaded) => onProgress(Math.min(99, Math.round(((offset + loaded) / file.size) * 100))),
       });
       offset = result.nextOffset;
+      chunkSize = nextAdaptiveYouTubeUploadChunkSize(
+        chunkSize,
+        Math.max(0, offset - chunkStartOffset),
+        Math.max(1, performance.now() - chunkStartedAt),
+      );
       if (result.videoId) videoId = result.videoId;
       retry = 0;
     } catch (error) {
@@ -279,7 +301,18 @@ async function uploadFileToYouTube({
         currentAccessToken = await refreshAccessToken();
         continue;
       }
-      if (!isRetriableYouTubeUploadStatus(status) || retry >= VIDEO_UPLOAD_RETRIES) throw error;
+      if (!isRetriableYouTubeUploadStatus(status)) throw error;
+      if (retry >= VIDEO_UPLOAD_RETRIES) {
+        if (status === 0) {
+          throw createUploadError(
+            "Соединение с YouTube несколько раз оборвалось. Повтори загрузку на стабильном Wi-Fi и оставь Mini App открытым.",
+            0,
+          );
+        }
+        throw error;
+      }
+
+      chunkSize = smallerYouTubeUploadChunkSize(chunkSize);
 
       await uploadRetryDelay(retry);
       retry += 1;
