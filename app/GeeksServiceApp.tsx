@@ -5,13 +5,11 @@
 import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { validateTeacherMaterialFile } from "@/lib/material-validation";
 import { bishkekDateKey, buildScheduleResponse, defaultTransferTarget, DEFAULT_LESSON_SCHEDULE, localDateParts, transferLessonSchedule } from "@/lib/schedule";
-import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherMaterialUploadResponse, TeacherUploadJob, TeacherUploadJobResponse } from "@/lib/types";
+import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherMaterialUploadResponse, TeacherUploadJob, TeacherUploadJobResponse, YouTubeUploadReconcileResponse } from "@/lib/types";
 import {
   initialYouTubeUploadChunkSize,
   isRetriableYouTubeUploadStatus,
-  nextAdaptiveYouTubeUploadChunkSize,
   nextYouTubeUploadOffset,
-  smallerYouTubeUploadChunkSize,
 } from "@/lib/youtube-resumable";
 
 declare global {
@@ -247,12 +245,14 @@ async function uploadFileToYouTube({
   uploadUrl,
   accessToken,
   refreshAccessToken,
+  reconcileUpload,
   onProgress,
 }: {
   file: File;
   uploadUrl: string;
   accessToken: string;
   refreshAccessToken: () => Promise<string>;
+  reconcileUpload: () => Promise<string | null>;
   onProgress: (progress: number) => void;
 }): Promise<string> {
   if (file.size <= 0) throw new Error("Видео пустое");
@@ -266,7 +266,7 @@ async function uploadFileToYouTube({
       connection?: { downlink?: number; effectiveType?: string };
     }
   ).connection;
-  let chunkSize = initialYouTubeUploadChunkSize(
+  const chunkSize = initialYouTubeUploadChunkSize(
     connection?.downlink,
     connection?.effectiveType,
   );
@@ -274,8 +274,6 @@ async function uploadFileToYouTube({
   while (offset < file.size) {
     const end = Math.min(offset + chunkSize, file.size);
     const chunk = file.slice(offset, end, file.type || "application/octet-stream");
-    const chunkStartedAt = performance.now();
-    const chunkStartOffset = offset;
     try {
       const result = await uploadYouTubeChunk({
         uploadUrl,
@@ -288,11 +286,6 @@ async function uploadFileToYouTube({
         onProgress: (loaded) => onProgress(Math.min(99, Math.round(((offset + loaded) / file.size) * 100))),
       });
       offset = result.nextOffset;
-      chunkSize = nextAdaptiveYouTubeUploadChunkSize(
-        chunkSize,
-        Math.max(0, offset - chunkStartOffset),
-        Math.max(1, performance.now() - chunkStartedAt),
-      );
       if (result.videoId) videoId = result.videoId;
       retry = 0;
     } catch (error) {
@@ -303,6 +296,11 @@ async function uploadFileToYouTube({
       }
       if (!isRetriableYouTubeUploadStatus(status)) throw error;
       if (retry >= VIDEO_UPLOAD_RETRIES) {
+        const recoveredVideoId = await reconcileUpload().catch(() => null);
+        if (recoveredVideoId) {
+          onProgress(100);
+          return recoveredVideoId;
+        }
         if (status === 0) {
           throw createUploadError(
             "Соединение с YouTube несколько раз оборвалось. Повтори загрузку на стабильном Wi-Fi и оставь Mini App открытым.",
@@ -311,8 +309,6 @@ async function uploadFileToYouTube({
         }
         throw error;
       }
-
-      chunkSize = smallerYouTubeUploadChunkSize(chunkSize);
 
       await uploadRetryDelay(retry);
       retry += 1;
@@ -340,6 +336,9 @@ async function uploadFileToYouTube({
   }
 
   onProgress(100);
+  if (!videoId) {
+    videoId = await reconcileUpload().catch(() => null);
+  }
   if (!videoId) throw new Error("YouTube не вернул ID видео");
   return videoId;
 }
@@ -1781,6 +1780,8 @@ function HomeworkUploadScreen({
           fileSize: file.size,
           mimeType: file.type || "application/octet-stream",
           privacyStatus: "unlisted",
+          lessonNumber,
+          courseMonth,
         }),
       }, sessionToken);
 
@@ -1797,6 +1798,13 @@ function HomeworkUploadScreen({
             method: "POST",
           }, sessionToken);
           return refreshed.accessToken;
+        },
+        reconcileUpload: async () => {
+          const reconciled = await api<YouTubeUploadReconcileResponse>("/api/admin/youtube/reconcile", {
+            method: "POST",
+            body: JSON.stringify({ jobId: session.jobId }),
+          }, sessionToken);
+          return reconciled.video?.videoId ?? null;
         },
         onProgress: (nextProgress) => {
           setProgress(nextProgress);

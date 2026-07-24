@@ -84,6 +84,8 @@ export interface TeacherUploadJob {
   title: string;
   fileName: string;
   fileSize: number;
+  lessonNumber: number;
+  courseMonth: number;
   progress: number;
   phase: TeacherUploadJobPhase;
   videoId: string | null;
@@ -94,6 +96,24 @@ export interface TeacherUploadJob {
 }
 
 export interface TeacherUploadJobResponse {
+  job: TeacherUploadJob | null;
+}
+
+export interface TeacherLessonVideo {
+  id: string;
+  lessonNumber: number;
+  courseMonth: number;
+  videoId: string;
+  videoUrl: string;
+  title: string;
+  verifiedAt: string;
+  updatedAt: string;
+}
+
+export interface YouTubeUploadReconcileResponse {
+  recovered: boolean;
+  nextOffset: number | null;
+  video: TeacherLessonVideo | null;
   job: TeacherUploadJob | null;
 }
 

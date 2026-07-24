@@ -16,6 +16,8 @@ type UploadSessionRequest = {
   fileSize?: number;
   mimeType?: string;
   privacyStatus?: PrivacyStatus;
+  lessonNumber?: number;
+  courseMonth?: number;
 };
 
 type GoogleErrorResponse = {
@@ -41,6 +43,8 @@ export async function POST(request: Request) {
   const privacyStatus = privacyStatuses.has(body?.privacyStatus ?? "unlisted")
     ? (body?.privacyStatus ?? "unlisted")
     : "unlisted";
+  const lessonNumber = positiveInteger(body?.lessonNumber, 1);
+  const courseMonth = positiveInteger(body?.courseMonth, 1);
 
   if (!title) return jsonError("Название ролика обязательно");
   if (!fileName) return jsonError("Не указано имя видеофайла");
@@ -64,6 +68,8 @@ export async function POST(request: Request) {
       title,
       fileName,
       fileSize,
+      lessonNumber,
+      courseMonth,
       uploaderTelegramId: identity.telegramUserId,
     });
     jobId = job.id;
@@ -76,7 +82,11 @@ export async function POST(request: Request) {
       mimeType,
       privacyStatus,
     });
-    await updateTeacherUploadJob(job.id, { phase: "uploading", progress: 0 });
+    await updateTeacherUploadJob(job.id, {
+      phase: "uploading",
+      progress: 0,
+      uploadUrl,
+    });
 
     return Response.json({
       uploadUrl,
@@ -105,6 +115,10 @@ export async function POST(request: Request) {
 function cleanMimeType(value: string | null | undefined): string {
   const cleaned = value?.trim().toLowerCase();
   return cleaned || "application/octet-stream";
+}
+
+function positiveInteger(value: number | undefined, fallback: number): number {
+  return Number.isInteger(value) && Number(value) > 0 ? Number(value) : fallback;
 }
 
 async function createResumableUploadSession({

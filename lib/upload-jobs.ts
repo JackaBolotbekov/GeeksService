@@ -6,6 +6,9 @@ type UploadJobRow = {
   title: string;
   file_name: string;
   file_size: number;
+  lesson_number: number;
+  course_month: number;
+  upload_url: string | null;
   progress: number;
   phase: string;
   video_id: string | null;
@@ -20,6 +23,8 @@ type CreateUploadJobInput = {
   title: string;
   fileName: string;
   fileSize: number;
+  lessonNumber: number;
+  courseMonth: number;
   uploaderTelegramId: string;
 };
 
@@ -29,6 +34,14 @@ type UpdateUploadJobInput = {
   videoId?: string | null;
   videoUrl?: string | null;
   errorMessage?: string | null;
+  uploadUrl?: string | null;
+  lessonNumber?: number;
+  courseMonth?: number;
+};
+
+export type TeacherUploadJobInternal = TeacherUploadJob & {
+  uploadUrl: string | null;
+  createdAt: string;
 };
 
 const activePhases = ["creating", "uploading", "saving"] as const;
@@ -54,6 +67,9 @@ export async function ensureTeacherUploadJobsDatabase(): Promise<void> {
       title TEXT NOT NULL,
       file_name TEXT NOT NULL,
       file_size INTEGER NOT NULL,
+      lesson_number INTEGER NOT NULL DEFAULT 1,
+      course_month INTEGER NOT NULL DEFAULT 1,
+      upload_url TEXT,
       progress INTEGER NOT NULL DEFAULT 0,
       phase TEXT NOT NULL DEFAULT 'creating',
       video_id TEXT,
@@ -80,13 +96,15 @@ export async function createTeacherUploadJob(input: CreateUploadJobInput): Promi
       title,
       file_name,
       file_size,
+      lesson_number,
+      course_month,
       progress,
       phase,
       uploader_telegram_id,
       created_at,
       updated_at
     )
-    SELECT ?, ?, ?, ?, 0, 'creating', ?, ?, ?
+    SELECT ?, ?, ?, ?, ?, ?, 0, 'creating', ?, ?, ?
     WHERE NOT EXISTS (
       SELECT 1
       FROM teacher_upload_jobs
@@ -97,6 +115,8 @@ export async function createTeacherUploadJob(input: CreateUploadJobInput): Promi
     input.title.slice(0, 100),
     input.fileName.slice(0, 240),
     input.fileSize,
+    positiveInteger(input.lessonNumber, 1),
+    positiveInteger(input.courseMonth, 1),
     input.uploaderTelegramId,
     now,
     now,
@@ -117,6 +137,24 @@ export async function currentTeacherUploadJob(): Promise<TeacherUploadJob | null
   return row ? toUploadJob(row) : null;
 }
 
+export async function teacherUploadJobInternal(id: string): Promise<TeacherUploadJobInternal | null> {
+  await ensureTeacherUploadJobsDatabase();
+  const row = await uploadJobRow(id);
+  return row ? toInternalUploadJob(row) : null;
+}
+
+export async function latestRecoverableTeacherUploadJob(title: string): Promise<TeacherUploadJob | null> {
+  await ensureTeacherUploadJobsDatabase();
+  const row = await d1().prepare(`
+    SELECT *
+    FROM teacher_upload_jobs
+    WHERE title = ? AND phase IN ('creating', 'uploading', 'saving', 'error')
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).bind(title.slice(0, 100)).first<UploadJobRow>();
+  return row ? toUploadJob(row) : null;
+}
+
 export async function updateTeacherUploadJob(
   id: string,
   input: UpdateUploadJobInput,
@@ -134,13 +172,32 @@ export async function updateTeacherUploadJob(
   const errorMessage = input.errorMessage === undefined
     ? current.error_message
     : cleanNullable(input.errorMessage)?.slice(0, 500) ?? null;
+  const uploadUrl = input.uploadUrl === undefined ? current.upload_url : cleanNullable(input.uploadUrl);
+  const lessonNumber = input.lessonNumber === undefined
+    ? positiveInteger(current.lesson_number, 1)
+    : positiveInteger(input.lessonNumber, 1);
+  const courseMonth = input.courseMonth === undefined
+    ? positiveInteger(current.course_month, 1)
+    : positiveInteger(input.courseMonth, 1);
   const now = new Date().toISOString();
 
   await d1().prepare(`
     UPDATE teacher_upload_jobs
-    SET progress = ?, phase = ?, video_id = ?, video_url = ?, error_message = ?, updated_at = ?
+    SET progress = ?, phase = ?, video_id = ?, video_url = ?, error_message = ?,
+        upload_url = ?, lesson_number = ?, course_month = ?, updated_at = ?
     WHERE id = ?
-  `).bind(progress, phase, videoId, videoUrl, errorMessage, now, id).run();
+  `).bind(
+    progress,
+    phase,
+    videoId,
+    videoUrl,
+    errorMessage,
+    uploadUrl,
+    lessonNumber,
+    courseMonth,
+    now,
+    id,
+  ).run();
 
   const updated = await uploadJobRow(id);
   return updated ? toUploadJob(updated) : null;
@@ -181,6 +238,8 @@ function toUploadJob(row: UploadJobRow): TeacherUploadJob {
     title: row.title,
     fileName: row.file_name,
     fileSize: row.file_size,
+    lessonNumber: positiveInteger(row.lesson_number, 1),
+    courseMonth: positiveInteger(row.course_month, 1),
     progress: row.progress,
     phase: isStale ? "interrupted" : phaseOf(row.phase),
     videoId: row.video_id,
@@ -188,6 +247,14 @@ function toUploadJob(row: UploadJobRow): TeacherUploadJob {
     errorMessage: row.error_message,
     updatedAt: updatedAt.toISOString(),
     isStale,
+  };
+}
+
+function toInternalUploadJob(row: UploadJobRow): TeacherUploadJobInternal {
+  return {
+    ...toUploadJob(row),
+    uploadUrl: row.upload_url,
+    createdAt: parseSqlDate(row.created_at).toISOString(),
   };
 }
 
@@ -206,4 +273,8 @@ function parseSqlDate(value: string): Date {
 function cleanNullable(value: string | null | undefined): string | null {
   const cleaned = value?.trim();
   return cleaned || null;
+}
+
+function positiveInteger(value: number, fallback: number): number {
+  return Number.isInteger(value) && value > 0 ? value : fallback;
 }

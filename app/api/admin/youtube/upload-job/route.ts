@@ -4,6 +4,7 @@ import {
   currentTeacherUploadJob,
   updateTeacherUploadJob,
 } from "@/lib/upload-jobs";
+import { upsertTeacherLessonVideo } from "@/lib/lesson-videos";
 import type { TeacherUploadJobPhase, TeacherUploadJobResponse } from "@/lib/types";
 
 type UpdateJobRequest = {
@@ -39,6 +40,15 @@ export async function PATCH(request: Request) {
     errorMessage: body.errorMessage,
   });
   if (!job) return jsonError("Загрузка уже закрыта", 409);
+  if (job.videoId && job.videoUrl) {
+    await upsertTeacherLessonVideo({
+      lessonNumber: job.lessonNumber,
+      courseMonth: job.courseMonth,
+      videoId: job.videoId,
+      videoUrl: job.videoUrl,
+      title: job.title,
+    });
+  }
   return Response.json({ job } satisfies TeacherUploadJobResponse);
 }
 

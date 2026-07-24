@@ -62,6 +62,9 @@ export const teacherUploadJobs = sqliteTable("teacher_upload_jobs", {
   title: text("title").notNull(),
   fileName: text("file_name").notNull(),
   fileSize: integer("file_size").notNull(),
+  lessonNumber: integer("lesson_number").notNull().default(1),
+  courseMonth: integer("course_month").notNull().default(1),
+  uploadUrl: text("upload_url"),
   progress: integer("progress").notNull().default(0),
   phase: text("phase").notNull().default("creating"),
   videoId: text("video_id"),
@@ -71,6 +74,21 @@ export const teacherUploadJobs = sqliteTable("teacher_upload_jobs", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const teacherLessonVideos = sqliteTable("teacher_lesson_videos", {
+  id: text("id").primaryKey(),
+  lessonNumber: integer("lesson_number").notNull(),
+  courseMonth: integer("course_month").notNull().default(1),
+  videoId: text("video_id").notNull(),
+  videoUrl: text("video_url").notNull(),
+  title: text("title").notNull(),
+  verifiedAt: text("verified_at").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  lessonIdx: uniqueIndex("teacher_lesson_videos_lesson_unique").on(table.courseMonth, table.lessonNumber),
+  videoIdx: uniqueIndex("teacher_lesson_videos_video_id_unique").on(table.videoId),
+}));
 
 export const lessonSchedule = sqliteTable("lesson_schedule", {
   id: text("id").primaryKey(),
