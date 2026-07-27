@@ -70,6 +70,25 @@ export interface TeacherMaterialUploadResponse {
   fileName: string;
 }
 
+export interface TeacherMaterialUploadPart {
+  partNumber: number;
+  size: number;
+}
+
+export interface TeacherMaterialUploadSessionResponse {
+  sessionId: string;
+  fileName: string;
+  fileSize: number;
+  partSize: number;
+  completed: boolean;
+  materialId: string | null;
+  uploadedParts: TeacherMaterialUploadPart[];
+}
+
+export interface TeacherMaterialUploadPartResponse extends TeacherMaterialUploadPart {
+  ok: boolean;
+}
+
 export type TeacherUploadJobPhase =
   | "creating"
   | "uploading"

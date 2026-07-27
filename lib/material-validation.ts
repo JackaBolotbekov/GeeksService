@@ -1,4 +1,5 @@
 export const MAX_MATERIAL_FILE_SIZE = 50 * 1024 * 1024;
+export const MATERIAL_UPLOAD_PART_SIZE = 8 * 1024 * 1024;
 
 const ALLOWED_EXTENSIONS = new Set([
   "csv",
@@ -41,4 +42,16 @@ export function cleanOriginalName(value: string): string {
     .trim()
     .slice(0, 180);
   return cleaned || "material";
+}
+
+export function materialUploadPartCount(fileSize: number): number {
+  if (!Number.isInteger(fileSize) || fileSize < 1) return 0;
+  return Math.ceil(fileSize / MATERIAL_UPLOAD_PART_SIZE);
+}
+
+export function expectedMaterialUploadPartSize(fileSize: number, partNumber: number): number {
+  const partCount = materialUploadPartCount(fileSize);
+  if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > partCount) return 0;
+  const start = (partNumber - 1) * MATERIAL_UPLOAD_PART_SIZE;
+  return Math.min(MATERIAL_UPLOAD_PART_SIZE, fileSize - start);
 }
