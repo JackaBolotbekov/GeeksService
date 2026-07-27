@@ -64,6 +64,13 @@
       "when": 1784874754959,
       "tag": "0008_hot_scalphunter",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1785160773668,
+      "tag": "0009_nebulous_exiles",
+      "breakpoints": true
     }
   ]
 }

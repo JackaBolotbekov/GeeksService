@@ -57,6 +57,51 @@ export const teacherMaterials = sqliteTable("teacher_materials", {
   fileKeyIdx: uniqueIndex("teacher_materials_file_key_unique").on(table.fileKey),
 }));
 
+export const teacherMaterialUploadSessions = sqliteTable("teacher_material_upload_sessions", {
+  id: text("id").primaryKey(),
+  uploadId: text("upload_id").notNull(),
+  fileKey: text("file_key").notNull(),
+  fileName: text("file_name").notNull(),
+  fileType: text("file_type").notNull(),
+  fileSize: integer("file_size").notNull(),
+  partSize: integer("part_size").notNull(),
+  lessonNumber: integer("lesson_number").notNull(),
+  courseMonth: integer("course_month").notNull().default(1),
+  videoId: text("video_id"),
+  videoUrl: text("video_url"),
+  uploaderTelegramId: text("uploader_telegram_id").notNull(),
+  status: text("status").notNull().default("uploading"),
+  materialId: text("material_id"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  fileKeyIdx: uniqueIndex("teacher_material_upload_sessions_file_key_unique").on(table.fileKey),
+  lookupIdx: index("teacher_material_upload_sessions_lookup_idx").on(
+    table.uploaderTelegramId,
+    table.courseMonth,
+    table.lessonNumber,
+    table.fileName,
+    table.fileSize,
+    table.createdAt,
+  ),
+}));
+
+export const teacherMaterialUploadParts = sqliteTable("teacher_material_upload_parts", {
+  sessionId: text("session_id").notNull().references(
+    () => teacherMaterialUploadSessions.id,
+    { onDelete: "cascade" },
+  ),
+  partNumber: integer("part_number").notNull(),
+  etag: text("etag").notNull(),
+  partSize: integer("part_size").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  sessionPartIdx: uniqueIndex("teacher_material_upload_parts_session_part_unique").on(
+    table.sessionId,
+    table.partNumber,
+  ),
+}));
+
 export const teacherUploadJobs = sqliteTable("teacher_upload_jobs", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),

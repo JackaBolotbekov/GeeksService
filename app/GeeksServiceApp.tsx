@@ -2,10 +2,10 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { type CSSProperties, type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
 import { validateTeacherMaterialFile } from "@/lib/material-validation";
 import { bishkekDateKey, buildScheduleResponse, defaultTransferTarget, DEFAULT_LESSON_SCHEDULE, localDateParts, transferLessonSchedule } from "@/lib/schedule";
-import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherMaterialUploadResponse, TeacherUploadChunkDiagnostic, TeacherUploadJob, TeacherUploadJobResponse, YouTubeUploadReconcileResponse, YouTubeUploadResumeResponse } from "@/lib/types";
+import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherMaterialUploadPartResponse, TeacherMaterialUploadResponse, TeacherMaterialUploadSessionResponse, TeacherUploadChunkDiagnostic, TeacherUploadJob, TeacherUploadJobResponse, YouTubeUploadReconcileResponse, YouTubeUploadResumeResponse } from "@/lib/types";
 import {
   initialYouTubeUploadChunkSize,
   isRetriableYouTubeUploadStatus,
@@ -95,6 +95,7 @@ type UploadChunkDiagnosticInput = Omit<
 
 const VIDEO_UPLOAD_RETRIES = 6;
 const VIDEO_UPLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+const MATERIAL_UPLOAD_RETRIES = 4;
 const LEADERBOARD_CACHE_KEY = "geeks-service:leaderboard:v1";
 const LEADERBOARD_LIVE_INTERVAL_MS = 1400;
 const TEACHER_UPLOAD_DRAFT_KEY = "geeks-service:teacher-upload-draft:v1";
@@ -124,6 +125,24 @@ async function apiForm<T>(path: string, body: FormData, sessionToken?: string | 
   });
   const data = await response.json().catch(() => null);
   if (!response.ok) throw new Error(data?.message ?? "Ошибка запроса");
+  return data as T;
+}
+
+async function apiBinary<T>(
+  path: string,
+  body: Blob,
+  sessionToken: string,
+): Promise<T> {
+  const response = await fetch(path, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${sessionToken}`,
+      "Content-Type": "application/octet-stream",
+    },
+    body,
+  });
+  const data = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(data?.message ?? "Ошибка загрузки части файла");
   return data as T;
 }
 
@@ -606,7 +625,7 @@ function useLockedViewportZoom() {
     const preventZoomGesture: EventListener = (event) => {
       event.preventDefault();
     };
-    const preventKeyboardZoom = (event: KeyboardEvent) => {
+    const preventKeyboardZoom = (event: globalThis.KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey)) return;
       if (["+", "=", "-", "_", "0"].includes(event.key)) event.preventDefault();
     };
@@ -1793,13 +1812,62 @@ function HomeworkUploadScreen({
     material: File,
   ): Promise<string> => {
     if (!sessionToken) throw new Error("Нет сессии преподавателя");
-    const form = new FormData();
-    form.set("file", material);
-    form.set("lessonNumber", String(lessonNumber));
-    form.set("courseMonth", String(courseMonth));
-    form.set("videoId", video.id);
-    form.set("videoUrl", video.url);
-    const saved = await apiForm<TeacherMaterialUploadResponse>("/api/admin/materials", form, sessionToken);
+    const session = await api<TeacherMaterialUploadSessionResponse>(
+      "/api/admin/materials/upload-session",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          lessonNumber,
+          courseMonth,
+          videoId: video.id,
+          videoUrl: video.url,
+          fileName: material.name,
+          fileType: material.type || "application/octet-stream",
+          fileSize: material.size,
+        }),
+      },
+      sessionToken,
+    );
+    if (session.completed) return session.fileName;
+
+    const confirmedParts = new Map(
+      session.uploadedParts.map((part) => [part.partNumber, part.size]),
+    );
+    const partCount = Math.ceil(material.size / session.partSize);
+    for (let partNumber = 1; partNumber <= partCount; partNumber += 1) {
+      const start = (partNumber - 1) * session.partSize;
+      const end = Math.min(material.size, start + session.partSize);
+      const part = material.slice(start, end);
+      if (confirmedParts.get(partNumber) === part.size) continue;
+
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt < MATERIAL_UPLOAD_RETRIES; attempt += 1) {
+        try {
+          await apiBinary<TeacherMaterialUploadPartResponse>(
+            `/api/admin/materials/upload-part?sessionId=${encodeURIComponent(session.sessionId)}&partNumber=${partNumber}`,
+            part,
+            sessionToken,
+          );
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+          if (attempt + 1 < MATERIAL_UPLOAD_RETRIES) {
+            await sleep(500 * (2 ** attempt));
+          }
+        }
+      }
+      if (lastError) throw lastError;
+    }
+
+    const saved = await api<TeacherMaterialUploadResponse>(
+      "/api/admin/materials/complete",
+      {
+        method: "POST",
+        body: JSON.stringify({ sessionId: session.sessionId }),
+      },
+      sessionToken,
+    );
     return saved.fileName;
   };
 
@@ -2632,7 +2700,7 @@ function Leaderboard({
     onToggleStudent(student.id);
   };
 
-  const handleStudentKeyDown = (event: KeyboardEvent<HTMLElement>, student: StudentView) => {
+  const handleStudentKeyDown = (event: ReactKeyboardEvent<HTMLElement>, student: StudentView) => {
     const target = event.target as HTMLElement;
     if (target.closest("button,input,select")) return;
     if (event.key !== "Enter" && event.key !== " ") return;
@@ -2663,9 +2731,10 @@ function Leaderboard({
     setBulkDrafts((current) => ({
       ...current,
       [student.id]: {
-        displayName: student.displayName,
-        telegram: telegramDraftValue(student),
-        ...current[student.id],
+        ...(current[student.id] ?? {
+          displayName: student.displayName,
+          telegram: telegramDraftValue(student),
+        }),
         [field]: value,
       },
     }));
@@ -2885,7 +2954,7 @@ function Avatar({ student, showMedal = false }: { student: StudentView; showMeda
     .at(0)
     ?.at(0)
     ?.toUpperCase();
-  const medal = showMedal ? podiumMedal(student.place) : null;
+  const medal = showMedal && student.place ? podiumMedal(student.place) : null;
   const avatar = shouldUseAvatar(student) && !failed
     ? <img className="avatar" src={student.avatarUrl} alt="" onError={() => setFailed(true)} />
     : <span className="avatar fallback">{initial || "G"}</span>;
