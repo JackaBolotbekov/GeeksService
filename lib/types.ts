@@ -187,6 +187,7 @@ export interface LessonScheduleTransfer {
   lessonNumber: number;
   originalScheduledAt: string;
   rescheduledAt: string;
+  reason: string | null;
   createdAt: string;
 }
 
