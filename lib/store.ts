@@ -382,4 +382,383 @@ export async function transferScheduledLesson(
     courseMonth: row.course_month,
     updatedAt: row.updated_at,
   }));
-  const calculated = calc
+  const calculated = calculateLessonTransfer(
+    source,
+    input.lessonNumber,
+    input.expectedScheduledAt,
+    input.targetScheduledAt,
+    now,
+  );
+  const updatedAt = now.toISOString();
+  const transferId = crypto.randomUUID();
+  const beforeScheduleJson = JSON.stringify(source.map((lesson) => ({
+    lessonNumber: lesson.lessonNumber,
+    scheduledAt: lesson.scheduledAt,
+    courseMonth: lesson.courseMonth,
+  })));
+  const selectedIndex = calculated.lessons.findIndex((lesson) => lesson.lessonNumber === input.lessonNumber);
+  const statements = calculated.lessons.slice(selectedIndex).map((lesson) =>
+    db.prepare(`
+      UPDATE lesson_schedule
+      SET scheduled_at = ?, course_month = ?, updated_at = ?
+      WHERE lesson_number = ?
+    `).bind(lesson.scheduledAt, lesson.courseMonth, updatedAt, lesson.lessonNumber),
+  );
+  statements.push(db.prepare(`
+    INSERT INTO lesson_schedule_transfers (
+      id, lesson_number, original_scheduled_at, rescheduled_at,
+      reason, before_schedule_json, cancelled_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
+    ON CONFLICT(lesson_number, original_scheduled_at)
+    DO UPDATE SET id = excluded.id,
+                  rescheduled_at = excluded.rescheduled_at,
+                  reason = excluded.reason,
+                  before_schedule_json = excluded.before_schedule_json,
+                  cancelled_at = NULL,
+                  created_at = excluded.created_at
+  `).bind(
+    transferId,
+    calculated.transfer.lessonNumber,
+    calculated.transfer.originalScheduledAt,
+    calculated.transfer.rescheduledAt,
+    normalizeTransferReason(input.reason),
+    beforeScheduleJson,
+    calculated.transfer.createdAt,
+  ));
+  await db.batch(statements);
+  return getLessonSchedule(now);
+}
+
+export async function cancelScheduledLessonTransfer(
+  input: { transferId: string; expectedRescheduledAt: string },
+  now = new Date(),
+): Promise<ScheduleResponse> {
+  await ensureDatabase();
+  const db = d1();
+  const latest = await db.prepare(`
+    SELECT id, lesson_number, original_scheduled_at, rescheduled_at, reason,
+           before_schedule_json, cancelled_at, created_at
+    FROM lesson_schedule_transfers
+    WHERE cancelled_at IS NULL
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).first<LessonScheduleTransferRow>();
+  if (!latest || latest.id !== input.transferId) {
+    throw new ScheduleConflictError("Отменить можно только последний активный перенос");
+  }
+  if (latest.rescheduled_at !== input.expectedRescheduledAt) {
+    throw new ScheduleConflictError("Расписание уже изменилось. Обнови календарь и попробуй снова");
+  }
+  if (new Date(latest.original_scheduled_at).getTime() <= now.getTime()) {
+    throw new Error("Исходное занятие уже началось, перенос отменить нельзя");
+  }
+
+  let restored: LessonScheduleInput[];
+  if (latest.before_schedule_json) {
+    const parsed = JSON.parse(latest.before_schedule_json) as LessonScheduleInput[];
+    restored = normalizeLessonSchedule(parsed);
+  } else {
+    const currentResult = await db.prepare(`
+      SELECT lesson_number, scheduled_at, course_month, updated_at
+      FROM lesson_schedule
+      ORDER BY lesson_number ASC
+    `).all<LessonScheduleRow>();
+    const current = (currentResult.results ?? []).map((row) => ({
+      lessonNumber: row.lesson_number,
+      scheduledAt: row.scheduled_at,
+      courseMonth: row.course_month,
+      updatedAt: row.updated_at,
+    }));
+    const selected = current.find((lesson) => lesson.lessonNumber === latest.lesson_number);
+    if (!selected || selected.scheduledAt !== latest.rescheduled_at) {
+      throw new ScheduleConflictError("Расписание уже изменилось. Обнови календарь и попробуй снова");
+    }
+    restored = restoreLessonTransferSchedule(
+      current,
+      latest.lesson_number,
+      latest.original_scheduled_at,
+    );
+  }
+  const updatedAt = now.toISOString();
+  const statements = restored.map((lesson) =>
+    db.prepare(`
+      UPDATE lesson_schedule
+      SET scheduled_at = ?, course_month = ?, updated_at = ?
+      WHERE lesson_number = ?
+    `).bind(lesson.scheduledAt, lesson.courseMonth, updatedAt, lesson.lessonNumber),
+  );
+  statements.push(db.prepare(`
+    UPDATE lesson_schedule_transfers
+    SET cancelled_at = ?
+    WHERE id = ? AND cancelled_at IS NULL
+  `).bind(updatedAt, latest.id));
+  await db.batch(statements);
+  return getLessonSchedule(now);
+}
+
+export async function updateScheduledLessonTransferReason(
+  input: { transferId: string; reason?: string | null },
+  now = new Date(),
+): Promise<ScheduleResponse> {
+  await ensureDatabase();
+  const result = await d1().prepare(`
+    UPDATE lesson_schedule_transfers
+    SET reason = ?
+    WHERE id = ? AND cancelled_at IS NULL
+  `).bind(normalizeTransferReason(input.reason), input.transferId).run();
+  if ((result.meta?.changes ?? 0) < 1) {
+    throw new Error("Перенос не найден");
+  }
+  return getLessonSchedule(now);
+}
+
+function normalizeTransferReason(value?: string | null): string | null {
+  const reason = String(value ?? "").trim();
+  if (!reason) return null;
+  if (reason.length > 300) throw new Error("Причина переноса должна быть короче 300 символов");
+  return reason;
+}
+
+export async function adminStudentsResponse(currentTelegramUserId: string | null): Promise<AdminStudentsResponse> {
+  await ensureDatabase();
+  const all = await listAllStudents(currentTelegramUserId);
+  return {
+    students: all
+      .filter((student) => student.status !== "pending")
+      .sort((left, right) => {
+        if (left.status !== right.status) return left.status === "active" ? -1 : 1;
+        return (left.place ?? 999) - (right.place ?? 999) || left.displayName.localeCompare(right.displayName, "ru");
+      }),
+    pendingStudents: all
+      .filter((student) => student.status === "pending")
+      .sort((left, right) => left.displayName.localeCompare(right.displayName, "ru")),
+  };
+}
+
+async function listAllStudents(currentTelegramUserId: string | null): Promise<StudentView[]> {
+  const db = d1();
+  const studentsResult = await db.prepare("SELECT * FROM students").all<StudentRow>();
+  const scoreResult = await db.prepare("SELECT student_id, lesson_number, score, created_at, updated_at FROM lesson_scores").all<ScoreRow>();
+  const scoresByStudent = new Map<string, ScoreCell[]>();
+  for (const row of scoreResult.results ?? []) {
+    const scores = scoresByStudent.get(row.student_id) ?? emptyScores();
+    scores[row.lesson_number - 1] = { lessonNumber: row.lesson_number, score: row.score, updatedAt: row.updated_at ?? row.created_at };
+    scoresByStudent.set(row.student_id, scores);
+  }
+  return withRanking((studentsResult.results ?? []).map((row) =>
+    rowToStudent(row, scoresByStudent.get(row.id) ?? emptyScores(), currentTelegramUserId),
+  ));
+}
+
+export async function findByTelegramUserId(telegramUserId: string): Promise<StudentView | null> {
+  await ensureDatabase();
+  const db = d1();
+  const row = await db.prepare("SELECT * FROM students WHERE telegram_user_id = ?").bind(telegramUserId).first<StudentRow>();
+  if (!row) return null;
+  return (await listAllStudents(telegramUserId)).find((student) => student.id === row.id) ?? null;
+}
+
+export async function findAvatarSourceByStudentId(studentId: string): Promise<{
+  telegramUserId: string | null;
+  telegramUsername: string | null;
+  avatarUrl: string | null;
+} | null> {
+  await ensureDatabase();
+  const db = d1();
+  const row = await db.prepare(`
+    SELECT telegram_user_id, telegram_username, avatar_url
+    FROM students
+    WHERE id = ?
+  `).bind(studentId).first<Pick<StudentRow, "telegram_user_id" | "telegram_username" | "avatar_url">>();
+  if (!row) return null;
+  return {
+    telegramUserId: row.telegram_user_id,
+    telegramUsername: row.telegram_username,
+    avatarUrl: row.avatar_url,
+  };
+}
+
+export async function upsertTelegramStudent(input: {
+  telegramUserId: string;
+  telegramUsername?: string | null;
+  displayName: string;
+  avatarUrl?: string | null;
+}): Promise<StudentView> {
+  await ensureDatabase();
+  const db = d1();
+  const telegramUsername = normalizeTelegramUsername(input.telegramUsername);
+  const existingById = await db.prepare("SELECT * FROM students WHERE telegram_user_id = ?").bind(input.telegramUserId).first<StudentRow>();
+  const avatarUrl = input.avatarUrl ?? publicTelegramAvatar(telegramUsername);
+
+  if (existingById) {
+    if (telegramUsername) {
+      await db.prepare("UPDATE students SET telegram_username = NULL WHERE telegram_username = ? AND id <> ?")
+        .bind(telegramUsername, existingById.id)
+        .run();
+    }
+    await db.prepare(`
+      UPDATE students
+      SET telegram_username = ?, avatar_url = COALESCE(?, avatar_url), last_seen_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(telegramUsername, avatarUrl, existingById.id).run();
+    return (await listAllStudents(input.telegramUserId)).find((student) => student.id === existingById.id) as StudentView;
+  }
+
+  const existingByUsername = telegramUsername
+    ? await db.prepare("SELECT * FROM students WHERE telegram_username = ?").bind(telegramUsername).first<StudentRow>()
+    : null;
+
+  if (existingByUsername && !existingByUsername.telegram_user_id) {
+    await db.prepare(`
+      UPDATE students
+      SET telegram_user_id = ?, avatar_url = COALESCE(?, avatar_url), last_seen_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).bind(input.telegramUserId, avatarUrl, existingByUsername.id).run();
+    return (await listAllStudents(input.telegramUserId)).find((student) => student.id === existingByUsername.id) as StudentView;
+  }
+
+  return createStudent({
+    displayName: input.displayName,
+    telegramUserId: input.telegramUserId,
+    telegramUsername,
+    avatarUrl,
+    status: "pending",
+  }, input.telegramUserId);
+}
+
+export async function createStudent(input: CreateStudentInput, currentTelegramUserId: string | null = null): Promise<StudentView> {
+  await ensureDatabase();
+  const db = d1();
+  const displayName = assertName(input.displayName);
+  const telegramUserId = assertTelegramId(input.telegramUserId);
+  const telegramUsername = normalizeTelegramUsername(input.telegramUsername);
+  const status = input.status ?? "active";
+  const avatarUrl = input.avatarUrl ?? publicTelegramAvatar(telegramUsername);
+  const existingByName = await db.prepare(`
+    SELECT * FROM students
+    WHERE lower(display_name) = lower(?) AND telegram_user_id IS NULL AND telegram_username IS NULL
+    LIMIT 1
+  `).bind(displayName).first<StudentRow>();
+
+  if (existingByName && (telegramUserId || telegramUsername)) {
+    return updateStudent(existingByName.id, { telegramUserId, telegramUsername, status }, currentTelegramUserId);
+  }
+
+  const id = crypto.randomUUID();
+  await db.prepare(`
+    INSERT INTO students (id, telegram_user_id, telegram_username, display_name, avatar_url, status)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).bind(id, telegramUserId, telegramUsername, displayName, avatarUrl, status).run();
+  return (await listAllStudents(currentTelegramUserId)).find((student) => student.id === id) as StudentView;
+}
+
+export async function importStudentsSnapshot(input: ImportedStudent[], currentTelegramUserId: string | null): Promise<AdminStudentsResponse> {
+  await ensureDatabase();
+  const db = d1();
+
+  for (const student of input) {
+    const displayName = assertName(student.displayName);
+    const telegramUserId = assertTelegramId(student.telegramUserId);
+    const telegramUsername = normalizeTelegramUsername(student.telegramUsername);
+    const avatarUrl = cleanImportedAvatar(student.avatarUrl, telegramUsername);
+    const status = student.status ?? "active";
+    const existing = await findImportMatch(db, displayName, telegramUserId, telegramUsername);
+    let studentId = existing?.id;
+
+    if (studentId) {
+      await db.prepare(`
+        UPDATE students
+        SET telegram_user_id = COALESCE(?, telegram_user_id),
+            telegram_username = COALESCE(?, telegram_username),
+            display_name = ?,
+            avatar_url = COALESCE(?, avatar_url),
+            status = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).bind(telegramUserId, telegramUsername, displayName, avatarUrl, status, studentId).run();
+    } else {
+      studentId = crypto.randomUUID();
+      await db.prepare(`
+        INSERT INTO students (id, telegram_user_id, telegram_username, display_name, avatar_url, status)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).bind(studentId, telegramUserId, telegramUsername, displayName, avatarUrl, status).run();
+    }
+
+    for (const cell of student.scores ?? []) {
+      if (cell.score === null) continue;
+      await setScore(studentId, cell.lessonNumber, cell.score);
+    }
+  }
+
+  return adminStudentsResponse(currentTelegramUserId);
+}
+
+async function findImportMatch(
+  db: D1Database,
+  displayName: string,
+  telegramUserId: string | null,
+  telegramUsername: string | null,
+): Promise<StudentRow | null> {
+  if (telegramUserId) {
+    const byId = await db.prepare("SELECT * FROM students WHERE telegram_user_id = ?").bind(telegramUserId).first<StudentRow>();
+    if (byId) return byId;
+  }
+  if (telegramUsername) {
+    const byUsername = await db.prepare("SELECT * FROM students WHERE telegram_username = ?").bind(telegramUsername).first<StudentRow>();
+    if (byUsername) return byUsername;
+  }
+  return await db.prepare("SELECT * FROM students WHERE lower(display_name) = lower(?) LIMIT 1").bind(displayName).first<StudentRow>();
+}
+
+function cleanImportedAvatar(avatarUrl: string | null | undefined, telegramUsername: string | null): string | null {
+  const publicAvatar = publicTelegramAvatar(telegramUsername);
+  if (publicAvatar) return publicAvatar;
+  if (!avatarUrl) return null;
+  return avatarUrl.startsWith("https://") ? avatarUrl : null;
+}
+
+export async function updateStudent(id: string, input: PatchStudentInput, currentTelegramUserId: string | null = null): Promise<StudentView> {
+  await ensureDatabase();
+  const db = d1();
+  const existing = await db.prepare("SELECT * FROM students WHERE id = ?").bind(id).first<StudentRow>();
+  if (!existing) throw new Error("Ученик не найден");
+
+  const displayName = input.displayName === undefined ? existing.display_name : assertName(input.displayName);
+  const telegramUserId = input.telegramUserId === undefined ? existing.telegram_user_id : assertTelegramId(input.telegramUserId);
+  const telegramUsername = input.telegramUsername === undefined ? existing.telegram_username : normalizeTelegramUsername(input.telegramUsername);
+  const avatarUrl = input.avatarUrl === undefined ? existing.avatar_url : input.avatarUrl;
+  const status = input.status ?? statusOf(existing.status);
+
+  await db.prepare(`
+    UPDATE students
+    SET telegram_user_id = ?, telegram_username = ?, display_name = ?, avatar_url = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).bind(telegramUserId, telegramUsername, displayName, avatarUrl, status, id).run();
+  return (await listAllStudents(currentTelegramUserId)).find((student) => student.id === id) as StudentView;
+}
+
+export async function deleteStudent(id: string): Promise<void> {
+  await ensureDatabase();
+  const db = d1();
+  await db.batch([
+    db.prepare("DELETE FROM lesson_scores WHERE student_id = ?").bind(id),
+    db.prepare("DELETE FROM students WHERE id = ?").bind(id),
+  ]);
+}
+
+export async function setScore(studentId: string, lessonNumber: number, score: number | null): Promise<void> {
+  await ensureDatabase();
+  const db = d1();
+  const lesson = assertLessonNumber(lessonNumber);
+  const cleanScore = assertScore(score);
+  const scoredAt = new Date().toISOString();
+  const student = await db.prepare("SELECT id FROM students WHERE id = ?").bind(studentId).first<{ id: string }>();
+  if (!student) throw new Error("Ученик не найден");
+
+  await db.prepare(`
+    INSERT INTO lesson_scores (id, student_id, lesson_number, score, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(student_id, lesson_number)
+    DO UPDATE SET score = excluded.score, updated_at = excluded.updated_at
+  `).bind(crypto.randomUUID(), studentId, lesson, cleanScore, scoredAt, scoredAt).run();
+}
