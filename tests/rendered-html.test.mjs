@@ -805,7 +805,9 @@ test("completed calendar lessons open source-matched homework while future lesso
   const homework = await readFile(new URL("../lib/lesson-homework.ts", import.meta.url), "utf8");
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-  assert.match(app, /mainLesson\?\.isCompleted && lessonHomeworkByNumber/);
+  assert.match(app, /canViewHomework\s*&&\s*mainLesson\?\.isCompleted\s*&&\s*lessonHomeworkByNumber/);
+  assert.match(app, /canViewHomework=\{canOpenHomework\}/);
+  assert.match(app, /rolePreviewAvailable\s*\?\s*teacherPreview \|\| studentPreview/);
   assert.match(app, /onHomeworkSelect\(mainLesson\)/);
   assert.match(app, /className="calendarHomeworkDialog"/);
   assert.match(app, /aria-modal="true"/);

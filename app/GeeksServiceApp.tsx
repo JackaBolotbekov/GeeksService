@@ -829,11 +829,9 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   const studentPreview = rolePreviewAvailable && testRole === "students";
   const actualAdmin = Boolean(isAdmin && sessionToken);
   const effectiveAdmin = actualAdmin || teacherPreview;
-  const canOpenHomework = Boolean(
-    sessionToken && (isAdmin || currentStudent?.status === "active")
-    || teacherPreview
-    || studentPreview,
-  );
+  const canOpenHomework = rolePreviewAvailable
+    ? teacherPreview || studentPreview
+    : Boolean(sessionToken && (isAdmin || currentStudent?.status === "active"));
   const visibleScreen = activeScreen === "homeworkUpload" && !canOpenHomework ? "leaderboard" : activeScreen;
 
   useEffect(() => {
@@ -1127,6 +1125,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
               schedule={schedule}
               scheduleError={scheduleError}
               isAdmin={effectiveAdmin}
+              canViewHomework={canOpenHomework}
               sessionToken={sessionToken}
               previewMode={teacherPreview}
               onScheduleChange={(next) => {
@@ -1231,6 +1230,7 @@ function ProfileScreen({
   schedule,
   scheduleError,
   isAdmin,
+  canViewHomework,
   sessionToken,
   previewMode,
   onScheduleChange,
@@ -1238,6 +1238,7 @@ function ProfileScreen({
   schedule: ScheduleResponse;
   scheduleError: string | null;
   isAdmin: boolean;
+  canViewHomework: boolean;
   sessionToken: string | null;
   previewMode: boolean;
   onScheduleChange: (next: ScheduleResponse) => void;
@@ -1459,6 +1460,7 @@ function ProfileScreen({
                 transfers={schedule.transfers}
                 cancellableTransferId={schedule.cancellableTransferId}
                 isAdmin={isAdmin}
+                canViewHomework={canViewHomework}
                 onLessonSelect={selectLesson}
                 onHomeworkSelect={selectHomework}
                 onTransferSelect={selectTransfer}
@@ -1581,6 +1583,7 @@ function CalendarMonth({
   transfers,
   cancellableTransferId,
   isAdmin,
+  canViewHomework,
   onLessonSelect,
   onHomeworkSelect,
   onTransferSelect,
@@ -1590,6 +1593,7 @@ function CalendarMonth({
   transfers: ScheduleResponse["transfers"];
   cancellableTransferId: string | null;
   isAdmin: boolean;
+  canViewHomework: boolean;
   onLessonSelect: (lesson: LessonScheduleItem) => void;
   onHomeworkSelect: (lesson: LessonScheduleItem) => void;
   onTransferSelect: (transfer: LessonScheduleTransfer) => void;
@@ -1620,8 +1624,10 @@ function CalendarMonth({
         const isTransfer = Boolean(transfer);
         const isPastOrToday = key <= today;
         const canTransfer = Boolean(isAdmin && mainLesson && key >= today);
-        const canViewHomework = Boolean(
-          mainLesson?.isCompleted && lessonHomeworkByNumber(mainLesson.lessonNumber),
+        const canOpenLessonHomework = Boolean(
+          canViewHomework
+          && mainLesson?.isCompleted
+          && lessonHomeworkByNumber(mainLesson.lessonNumber),
         );
         const canCancelTransfer = Boolean(
           isAdmin
@@ -1629,7 +1635,7 @@ function CalendarMonth({
           && latestTransfer?.id === transfer.id
           && cancellableTransferId === transfer.id,
         );
-        const actionable = canCancelTransfer || canViewHomework || canTransfer;
+        const actionable = canCancelTransfer || canOpenLessonHomework || canTransfer;
         const className = `calendarDay ${isPastOrToday ? "past" : ""} ${mainLesson ? "lesson" : ""} ${mainLesson && !isPastOrToday ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${key === today ? "today" : ""} ${actionable ? "actionable" : ""}`;
         const content = (
           <>
@@ -1646,15 +1652,15 @@ function CalendarMonth({
               key={key}
               title={canCancelTransfer
                 ? "Отменить перенос"
-                : canViewHomework ? `Домашнее задание к занятию ${mainLesson?.lessonNumber}` : `Занятие ${mainLesson?.lessonNumber}`}
+                : canOpenLessonHomework ? `Домашнее задание к занятию ${mainLesson?.lessonNumber}` : `Занятие ${mainLesson?.lessonNumber}`}
               aria-label={canCancelTransfer
                 ? `Отменить перенос занятия ${transfer?.lessonNumber}`
-                : canViewHomework
+                : canOpenLessonHomework
                   ? `Открыть домашнее задание к занятию ${mainLesson?.lessonNumber}`
                   : `Открыть занятие ${mainLesson?.lessonNumber}, ${cell} число`}
               onClick={() => {
                 if (canCancelTransfer && transfer) onTransferSelect(transfer);
-                else if (canViewHomework && mainLesson) onHomeworkSelect(mainLesson);
+                else if (canOpenLessonHomework && mainLesson) onHomeworkSelect(mainLesson);
                 else if (mainLesson) onLessonSelect(mainLesson);
               }}
             >
