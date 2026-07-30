@@ -525,12 +525,15 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.calendarDay\.today\s*{[^}]*border-color:\s*var\(--yellow\);[^}]*background:\s*#fffdf6/s);
   assert.doesNotMatch(css, /\.calendarDay\.today\s*{[^}]*#65e58a/s);
   assert.match(css, /\.calendarDay\.transfer \.transferBadge\s*{[^}]*width:\s*max-content;[^}]*border:\s*0;[^}]*white-space:\s*nowrap;[^}]*transform:\s*translateX\(-50%\)/s);
-  assert.match(css, /\.calendarTransferOverlay\s*{[^}]*position:\s*absolute/s);
+  assert.match(css, /\.calendarTransferOverlay\s*{[^}]*position:\s*fixed/s);
   assert.match(css, /\.calendarTransferDialog\s*{[^}]*background:\s*var\(--card\)/s);
   assert.match(app, /Длительность обучения: 1 мес\. 12 занятий/);
   assert.doesNotMatch(css, /\.calendarSwipeHint\s*{/);
   assert.match(app, /aria-label="Предыдущий учебный месяц"/);
   assert.match(app, /aria-label="Следующий учебный месяц"/);
+  assert.match(app, /Причина переноса \(необязательно\)/);
+  assert.match(app, /method:\s*"PATCH"/);
+  assert.match(app, /canManageTransfer/);
   assert.doesNotMatch(app, /calendarSwipeHint/);
   assert.match(css, /@keyframes calendarSlideNext/);
   assert.match(css, /@keyframes badgeTextSwap/);
@@ -626,11 +629,17 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
     readFile(new URL("../drizzle/0008_hot_scalphunter.sql", import.meta.url), "utf8"),
     readFile(new URL("../drizzle/0009_nebulous_exiles.sql", import.meta.url), "utf8"),
   ]);
+  const transferReasonMigration = await readFile(new URL("../drizzle/0010_transfer_reason.sql", import.meta.url), "utf8");
 
   assert.match(leaderboardRoute, /listStudents/);
   assert.match(adminRoute, /createStudent/);
   assert.match(studentRoute, /updateStudent/);
   assert.match(telegramRoute, /validateTelegramInitData/);
+  assert.match(transferScheduleRoute, /updateScheduledLessonTransferReason/);
+  assert.match(transferScheduleRoute, /export async function PATCH/);
+  assert.match(store, /normalizeTransferReason/);
+  assert.match(schema, /reason:\s*text\("reason"\)/);
+  assert.match(transferReasonMigration, /ADD `reason` text/);
   assert.match(importRoute, /importStudentsSnapshot/);
   assert.match(avatarRoute, /getUserProfilePhotos/);
   assert.match(avatarRoute, /getFile/);

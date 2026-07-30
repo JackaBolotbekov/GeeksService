@@ -32,6 +32,7 @@ type LessonScheduleTransferRow = {
   lesson_number: number;
   original_scheduled_at: string;
   rescheduled_at: string;
+  reason: string | null;
   before_schedule_json: string | null;
   cancelled_at: string | null;
   created_at: string;
@@ -125,6 +126,7 @@ async function initializeDatabase(): Promise<void> {
         lesson_number INTEGER NOT NULL,
         original_scheduled_at TEXT NOT NULL,
         rescheduled_at TEXT NOT NULL,
+        reason TEXT,
         before_schedule_json TEXT,
         cancelled_at TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -164,6 +166,9 @@ async function ensureTransferHistoryColumns(db: D1Database): Promise<void> {
   }
   if (!columns.has("cancelled_at")) {
     await db.prepare("ALTER TABLE lesson_schedule_transfers ADD COLUMN cancelled_at TEXT").run();
+  }
+  if (!columns.has("reason")) {
+    await db.prepare("ALTER TABLE lesson_schedule_transfers ADD COLUMN reason TEXT").run();
   }
 }
 
@@ -206,6 +211,7 @@ function transferRow(row: LessonScheduleTransferRow): LessonScheduleTransfer {
     lessonNumber: row.lesson_number,
     originalScheduledAt: row.original_scheduled_at,
     rescheduledAt: row.rescheduled_at,
+    reason: row.reason,
     createdAt: row.created_at,
   };
 }
@@ -322,7 +328,7 @@ export async function getLessonSchedule(now = new Date()): Promise<ScheduleRespo
       ORDER BY lesson_number ASC
     `).all<LessonScheduleRow>(),
     db.prepare(`
-      SELECT id, lesson_number, original_scheduled_at, rescheduled_at,
+      SELECT id, lesson_number, original_scheduled_at, rescheduled_at, reason,
              before_schedule_json, cancelled_at, created_at
       FROM lesson_schedule_transfers
       WHERE cancelled_at IS NULL
@@ -360,7 +366,7 @@ export async function saveLessonSchedule(input: LessonScheduleInput[], now = new
 }
 
 export async function transferScheduledLesson(
-  input: { lessonNumber: number; expectedScheduledAt: string; targetScheduledAt: string },
+  input: { lessonNumber: number; expectedScheduledAt: string; targetScheduledAt: string; reason?: string | null },
   now = new Date(),
 ): Promise<ScheduleResponse> {
   await ensureDatabase();
@@ -401,11 +407,12 @@ export async function transferScheduledLesson(
   statements.push(db.prepare(`
     INSERT INTO lesson_schedule_transfers (
       id, lesson_number, original_scheduled_at, rescheduled_at,
-      before_schedule_json, cancelled_at, created_at
-    ) VALUES (?, ?, ?, ?, ?, NULL, ?)
+      reason, before_schedule_json, cancelled_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
     ON CONFLICT(lesson_number, original_scheduled_at)
     DO UPDATE SET id = excluded.id,
                   rescheduled_at = excluded.rescheduled_at,
+                  reason = excluded.reason,
                   before_schedule_json = excluded.before_schedule_json,
                   cancelled_at = NULL,
                   created_at = excluded.created_at
@@ -414,6 +421,7 @@ export async function transferScheduledLesson(
     calculated.transfer.lessonNumber,
     calculated.transfer.originalScheduledAt,
     calculated.transfer.rescheduledAt,
+    normalizeTransferReason(input.reason),
     beforeScheduleJson,
     calculated.transfer.createdAt,
   ));
@@ -428,7 +436,7 @@ export async function cancelScheduledLessonTransfer(
   await ensureDatabase();
   const db = d1();
   const latest = await db.prepare(`
-    SELECT id, lesson_number, original_scheduled_at, rescheduled_at,
+    SELECT id, lesson_number, original_scheduled_at, rescheduled_at, reason,
            before_schedule_json, cancelled_at, created_at
     FROM lesson_schedule_transfers
     WHERE cancelled_at IS NULL
@@ -486,6 +494,29 @@ export async function cancelScheduledLessonTransfer(
   `).bind(updatedAt, latest.id));
   await db.batch(statements);
   return getLessonSchedule(now);
+}
+
+export async function updateScheduledLessonTransferReason(
+  input: { transferId: string; reason?: string | null },
+  now = new Date(),
+): Promise<ScheduleResponse> {
+  await ensureDatabase();
+  const result = await d1().prepare(`
+    UPDATE lesson_schedule_transfers
+    SET reason = ?
+    WHERE id = ? AND cancelled_at IS NULL
+  `).bind(normalizeTransferReason(input.reason), input.transferId).run();
+  if ((result.meta?.changes ?? 0) < 1) {
+    throw new Error("Перенос не найден");
+  }
+  return getLessonSchedule(now);
+}
+
+function normalizeTransferReason(value?: string | null): string | null {
+  const reason = String(value ?? "").trim();
+  if (!reason) return null;
+  if (reason.length > 300) throw new Error("Причина переноса должна быть короче 300 символов");
+  return reason;
 }
 
 export async function adminStudentsResponse(currentTelegramUserId: string | null): Promise<AdminStudentsResponse> {

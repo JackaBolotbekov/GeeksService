@@ -117,6 +117,7 @@ export function transferLessonSchedule(
       lessonNumber: selected.lessonNumber,
       originalScheduledAt: selected.scheduledAt,
       rescheduledAt: shifted[selectedIndex].scheduledAt,
+      reason: null,
       createdAt: now.toISOString(),
     },
   };

@@ -828,7 +828,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   const teacherPreview = rolePreviewAvailable && testRole === "teachers";
   const studentPreview = rolePreviewAvailable && testRole === "students";
   const actualAdmin = Boolean(isAdmin && sessionToken);
-  const effectiveAdmin = actualAdmin || teacherPreview;
+  const effectiveAdmin = rolePreviewAvailable ? teacherPreview : actualAdmin;
   const canOpenHomework = rolePreviewAvailable
     ? teacherPreview || studentPreview
     : Boolean(sessionToken && (isAdmin || currentStudent?.status === "active"));
@@ -1249,6 +1249,7 @@ function ProfileScreen({
   const [selectedTransfer, setSelectedTransfer] = useState<LessonScheduleTransfer | null>(null);
   const [selectedHomework, setSelectedHomework] = useState<LessonHomework | null>(null);
   const [transferTargetLocal, setTransferTargetLocal] = useState("");
+  const [transferReason, setTransferReason] = useState("");
   const [transferSaving, setTransferSaving] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
   const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -1294,6 +1295,7 @@ function ProfileScreen({
     setSelectedTransfer(null);
     setSelectedLesson(lesson);
     setTransferTargetLocal(defaultTransferTarget(lesson.scheduledAt).slice(0, 16));
+    setTransferReason("");
   };
 
   const selectHomework = (lesson: LessonScheduleItem) => {
@@ -1312,6 +1314,7 @@ function ProfileScreen({
     setTransferError(null);
     setSelectedLesson(null);
     setSelectedTransfer(transfer);
+    setTransferReason(transfer.reason ?? "");
   };
 
   const moveSelectedLesson = async () => {
@@ -1338,7 +1341,7 @@ function ProfileScreen({
       const optimistic = buildScheduleResponse(
         calculated.lessons,
         new Date(),
-        [...schedule.transfers, calculated.transfer],
+        [...schedule.transfers, { ...calculated.transfer, reason: transferReason.trim() || null }],
       );
       onScheduleChange(optimistic);
       if (previewMode) {
@@ -1353,6 +1356,7 @@ function ProfileScreen({
           lessonNumber: selectedLesson.lessonNumber,
           expectedScheduledAt: selectedLesson.scheduledAt,
           targetScheduledAt,
+          reason: transferReason,
         }),
       }, sessionToken);
       onScheduleChange(response);
@@ -1362,6 +1366,40 @@ function ProfileScreen({
       onScheduleChange(previous);
       hapticNotice("error");
       setTransferError(caught instanceof Error ? caught.message : "Не удалось перенести занятие");
+    } finally {
+      setTransferSaving(false);
+    }
+  };
+
+  const saveSelectedTransferReason = async () => {
+    if (!selectedTransfer || transferSaving) return;
+    const previous = schedule;
+    const reason = transferReason.trim() || null;
+    setTransferSaving(true);
+    setTransferError(null);
+    try {
+      const optimistic = buildScheduleResponse(
+        schedule.lessons,
+        new Date(),
+        schedule.transfers.map((transfer) => (
+          transfer.id === selectedTransfer.id ? { ...transfer, reason } : transfer
+        )),
+      );
+      onScheduleChange(optimistic);
+      if (!previewMode) {
+        if (!sessionToken) throw new Error("Нет сессии преподавателя");
+        const response = await api<ScheduleResponse>("/api/admin/schedule/transfer", {
+          method: "PATCH",
+          body: JSON.stringify({ transferId: selectedTransfer.id, reason }),
+        }, sessionToken);
+        onScheduleChange(response);
+      }
+      hapticNotice("success");
+      setSelectedTransfer(null);
+    } catch (caught) {
+      onScheduleChange(previous);
+      hapticNotice("error");
+      setTransferError(caught instanceof Error ? caught.message : "Не удалось сохранить причину переноса");
     } finally {
       setTransferSaving(false);
     }
@@ -1424,7 +1462,7 @@ function ProfileScreen({
 
         {currentMonth && (
           <div
-            className="calendarCard"
+            className={`calendarCard ${(selectedLesson || selectedTransfer) ? "dialogOpen" : ""}`}
             aria-label="Календарь занятий"
             onPointerDown={(event) => {
               swipeStartRef.current = { x: event.clientX, y: event.clientY };
@@ -1483,7 +1521,7 @@ function ProfileScreen({
                   aria-modal="true"
                   aria-label={selectedLesson
                     ? `Перенос занятия ${selectedLesson.lessonNumber}`
-                    : `Отмена переноса занятия ${selectedTransfer?.lessonNumber}`}
+                    : `Перенос занятия ${selectedTransfer?.lessonNumber}`}
                   onClick={(event) => event.stopPropagation()}
                 >
                   <span className="transferPreviewBadge">ПЕРЕНОС</span>
@@ -1515,9 +1553,18 @@ function ProfileScreen({
                   ) : selectedTransfer ? (
                     <>
                       <p>Перенесено на {formatScheduleDate(selectedTransfer.rescheduledAt)}</p>
-                      <p className="transferScheduleHint">Вернуть занятие и всю последующую последовательность?</p>
                     </>
                   ) : null}
+                  <label className="transferReasonField">
+                    <span>Причина переноса (необязательно)</span>
+                    <textarea
+                      value={transferReason}
+                      maxLength={300}
+                      disabled={transferSaving}
+                      placeholder="Например: занятие перенесено по просьбе группы"
+                      onChange={(event) => setTransferReason(event.target.value)}
+                    />
+                  </label>
                   {transferError && <p className="transferDialogError">{transferError}</p>}
                   <div className="transferDialogActions">
                     <button
@@ -1535,13 +1582,23 @@ function ProfileScreen({
                       type="button"
                       className="transferConfirmButton"
                       disabled={transferSaving}
-                      onClick={() => void (selectedLesson ? moveSelectedLesson() : cancelSelectedTransfer())}
+                      onClick={() => void (selectedLesson ? moveSelectedLesson() : saveSelectedTransferReason())}
                     >
                       {transferSaving
-                        ? selectedLesson ? "Переношу..." : "Возвращаю..."
-                        : selectedLesson ? "Перенести" : "Отменить перенос"}
+                        ? selectedLesson ? "Переношу..." : "Сохраняю..."
+                        : selectedLesson ? "Перенести" : "Сохранить"}
                     </button>
                   </div>
+                  {selectedTransfer && schedule.cancellableTransferId === selectedTransfer.id && (
+                    <button
+                      type="button"
+                      className="transferUndoButton"
+                      disabled={transferSaving}
+                      onClick={() => void cancelSelectedTransfer()}
+                    >
+                      {transferSaving ? "Возвращаю..." : "Отменить перенос"}
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -1635,7 +1692,8 @@ function CalendarMonth({
           && latestTransfer?.id === transfer.id
           && cancellableTransferId === transfer.id,
         );
-        const actionable = canCancelTransfer || canOpenLessonHomework || canTransfer;
+        const canManageTransfer = Boolean(isAdmin && transfer);
+        const actionable = canManageTransfer || canOpenLessonHomework || canTransfer;
         const className = `calendarDay ${isPastOrToday ? "past" : ""} ${mainLesson ? "lesson" : ""} ${mainLesson && !isPastOrToday ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${key === today ? "today" : ""} ${actionable ? "actionable" : ""}`;
         const content = (
           <>
@@ -1650,16 +1708,16 @@ function CalendarMonth({
               type="button"
               className={className}
               key={key}
-              title={canCancelTransfer
-                ? "Отменить перенос"
+              title={canManageTransfer
+                ? canCancelTransfer ? "Отменить перенос или изменить причину" : "Изменить причину переноса"
                 : canOpenLessonHomework ? `Домашнее задание к занятию ${mainLesson?.lessonNumber}` : `Занятие ${mainLesson?.lessonNumber}`}
-              aria-label={canCancelTransfer
-                ? `Отменить перенос занятия ${transfer?.lessonNumber}`
+              aria-label={canManageTransfer
+                ? `Открыть перенос занятия ${transfer?.lessonNumber}`
                 : canOpenLessonHomework
                   ? `Открыть домашнее задание к занятию ${mainLesson?.lessonNumber}`
                   : `Открыть занятие ${mainLesson?.lessonNumber}, ${cell} число`}
               onClick={() => {
-                if (canCancelTransfer && transfer) onTransferSelect(transfer);
+                if (canManageTransfer && transfer) onTransferSelect(transfer);
                 else if (canOpenLessonHomework && mainLesson) onHomeworkSelect(mainLesson);
                 else if (mainLesson) onLessonSelect(mainLesson);
               }}

@@ -1234,6 +1234,10 @@ button:disabled {
   overflow: hidden;
 }
 
+.calendarCard.dialogOpen {
+  overflow: visible;
+}
+
 .calendarHeader {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr) 38px;
@@ -1443,15 +1447,14 @@ button.calendarDay {
 }
 
 .calendarTransferOverlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 8;
+  z-index: 90;
   display: grid;
   place-items: center;
   padding: 18px;
-  border-radius: 22px;
-  background: rgba(17, 19, 27, 0.14);
-  backdrop-filter: blur(2px);
+  background: rgba(17, 19, 27, 0.56);
+  backdrop-filter: blur(5px);
   animation: calendarTransferFade 160ms ease both;
 }
 
@@ -1545,6 +1548,8 @@ button.calendarDay {
 
 .calendarTransferDialog {
   width: min(292px, 100%);
+  max-height: min(88svh, 680px);
+  overflow-y: auto;
   display: grid;
   gap: 8px;
   padding: 16px;
@@ -1642,6 +1647,42 @@ button.calendarDay {
   box-shadow: 0 0 0 3px rgba(255, 223, 38, 0.28);
 }
 
+.transferReasonField {
+  display: grid;
+  gap: 5px;
+}
+
+.transferReasonField span {
+  color: #6d717b;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.transferReasonField textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 70px;
+  resize: vertical;
+  padding: 9px 10px;
+  border: 2px solid #11131b;
+  border-radius: 12px;
+  background: #eef0f2;
+  color: var(--ink);
+  caret-color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.25;
+  outline: none;
+}
+
+.transferReasonField textarea:focus {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 3px rgba(255, 223, 38, 0.28);
+}
+
 .calendarTransferDialog .transferScheduleHint {
   color: #565b66;
   font-size: 12px;
@@ -1679,6 +1720,17 @@ button.calendarDay {
 .transferConfirmButton {
   background: var(--yellow);
   box-shadow: 0 3px 0 #11131b;
+}
+
+.transferUndoButton {
+  width: 100%;
+  min-height: 42px;
+  border: 2px solid #11131b;
+  border-radius: 13px;
+  background: #deded8;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 950;
 }
 
 .calendarNote {
