@@ -47,6 +47,7 @@ export interface MeResponse {
   isAdmin: boolean;
   student: StudentView | null;
   pending: boolean;
+  submittedLessonNumbers: number[];
 }
 
 export interface LeaderboardResponse {
@@ -62,6 +63,7 @@ export interface HomeworkSubmitResponse {
   ok: boolean;
   submissionId: string;
   fileName: string | null;
+  lessonNumber: number;
 }
 
 export interface TeacherMaterialUploadResponse {

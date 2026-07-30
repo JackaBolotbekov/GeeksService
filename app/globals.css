@@ -1529,19 +1529,31 @@ button.calendarDay {
   white-space: pre-wrap;
 }
 
-.calendarHomeworkDialog > button {
+.calendarHomeworkActions {
+  display: grid;
+  gap: 8px;
+}
+
+.calendarHomeworkActions button {
   width: 100%;
   min-height: 48px;
   border: 2px solid #11131b;
   border-radius: 14px;
-  background: var(--yellow);
   color: var(--ink);
   font-size: 16px;
   font-weight: 950;
   box-shadow: 0 3px 0 #11131b;
 }
 
-.calendarHomeworkDialog > button:active {
+.calendarHomeworkSubmit {
+  background: var(--yellow);
+}
+
+.calendarHomeworkClose {
+  background: #fffdf6;
+}
+
+.calendarHomeworkActions button:active {
   transform: translateY(2px);
   box-shadow: 0 1px 0 #11131b;
 }
@@ -1683,6 +1695,31 @@ button.calendarDay {
   box-shadow: 0 0 0 3px rgba(255, 223, 38, 0.28);
 }
 
+.transferReasonReadOnly {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 2px solid #11131b;
+  border-radius: 14px;
+  background: #fffdf6;
+}
+
+.transferReasonReadOnly > strong {
+  color: #6d717b;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.05em;
+}
+
+.transferReasonReadOnly > p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
 .calendarTransferDialog .transferScheduleHint {
   color: #565b66;
   font-size: 12px;
@@ -1720,6 +1757,10 @@ button.calendarDay {
 .transferConfirmButton {
   background: var(--yellow);
   box-shadow: 0 3px 0 #11131b;
+}
+
+.calendarTransferDialog.readOnly .transferDialogActions {
+  grid-template-columns: 1fr;
 }
 
 .transferUndoButton {
