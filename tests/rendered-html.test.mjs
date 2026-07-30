@@ -799,3 +799,21 @@ test("admin score picker stays in one compact row", async () => {
   assert.match(css, /grid-template-columns:\s*repeat\(11,\s*minmax\(0,\s*1fr\)\)/);
   assert.doesNotMatch(css, /\.scorePicker\s*{[^}]*repeat\(4/s);
 });
+
+test("completed calendar lessons open source-matched homework while future lessons stay inactive", async () => {
+  const app = await readFile(new URL("../app/GeeksServiceApp.tsx", import.meta.url), "utf8");
+  const homework = await readFile(new URL("../lib/lesson-homework.ts", import.meta.url), "utf8");
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(app, /mainLesson\?\.isCompleted && lessonHomeworkByNumber/);
+  assert.match(app, /onHomeworkSelect\(mainLesson\)/);
+  assert.match(app, /className="calendarHomeworkDialog"/);
+  assert.match(app, /aria-modal="true"/);
+  assert.match(homework, /lessonNumber:\s*1/);
+  assert.match(homework, /lessonNumber:\s*9/);
+  assert.doesNotMatch(homework, /lessonNumber:\s*10/);
+  assert.match(homework, /Создать через v0, Lovable или Bolt\.new/);
+  assert.match(homework, /создать свой публичный SSH ключ/);
+  assert.match(css, /\.calendarHomeworkOverlay\s*{[^}]*position:\s*fixed/s);
+  assert.match(css, /\.calendarHomeworkBody p\s*{[^}]*white-space:\s*pre-wrap/s);
+});

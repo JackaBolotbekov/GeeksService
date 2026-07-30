@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
+import { lessonHomeworkByNumber, type LessonHomework } from "@/lib/lesson-homework";
 import { validateTeacherMaterialFile } from "@/lib/material-validation";
 import { bishkekDateKey, buildScheduleResponse, defaultTransferTarget, DEFAULT_LESSON_SCHEDULE, localDateParts, transferLessonSchedule } from "@/lib/schedule";
 import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherMaterialUploadPartResponse, TeacherMaterialUploadResponse, TeacherMaterialUploadSessionResponse, TeacherUploadChunkDiagnostic, TeacherUploadJob, TeacherUploadJobResponse, YouTubeUploadReconcileResponse, YouTubeUploadResumeResponse } from "@/lib/types";
@@ -1245,6 +1246,7 @@ function ProfileScreen({
   const [monthMotion, setMonthMotion] = useState<"prev" | "next" | "idle">("idle");
   const [selectedLesson, setSelectedLesson] = useState<LessonScheduleItem | null>(null);
   const [selectedTransfer, setSelectedTransfer] = useState<LessonScheduleTransfer | null>(null);
+  const [selectedHomework, setSelectedHomework] = useState<LessonHomework | null>(null);
   const [transferTargetLocal, setTransferTargetLocal] = useState("");
   const [transferSaving, setTransferSaving] = useState(false);
   const [transferError, setTransferError] = useState<string | null>(null);
@@ -1261,6 +1263,7 @@ function ProfileScreen({
       if (next !== current) {
         setSelectedLesson(null);
         setSelectedTransfer(null);
+        setSelectedHomework(null);
         setTransferError(null);
         setMonthMotion(step > 0 ? "next" : "prev");
         hapticSelection();
@@ -1290,6 +1293,16 @@ function ProfileScreen({
     setSelectedTransfer(null);
     setSelectedLesson(lesson);
     setTransferTargetLocal(defaultTransferTarget(lesson.scheduledAt).slice(0, 16));
+  };
+
+  const selectHomework = (lesson: LessonScheduleItem) => {
+    if (suppressDayClickRef.current || !lesson.isCompleted) return;
+    const homework = lessonHomeworkByNumber(lesson.lessonNumber);
+    if (!homework) return;
+    hapticSelection();
+    setSelectedLesson(null);
+    setSelectedTransfer(null);
+    setSelectedHomework(homework);
   };
 
   const selectTransfer = (transfer: LessonScheduleTransfer) => {
@@ -1389,16 +1402,17 @@ function ProfileScreen({
   };
 
   useEffect(() => {
-    if (!selectedLesson && !selectedTransfer) return;
+    if (!selectedLesson && !selectedTransfer && !selectedHomework) return;
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape" && !transferSaving) {
         setSelectedLesson(null);
         setSelectedTransfer(null);
+        setSelectedHomework(null);
       }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [selectedLesson, selectedTransfer, transferSaving]);
+  }, [selectedHomework, selectedLesson, selectedTransfer, transferSaving]);
 
   return (
     <section className="profileScreen">
@@ -1446,6 +1460,7 @@ function ProfileScreen({
                 cancellableTransferId={schedule.cancellableTransferId}
                 isAdmin={isAdmin}
                 onLessonSelect={selectLesson}
+                onHomeworkSelect={selectHomework}
                 onTransferSelect={selectTransfer}
               />
             </div>
@@ -1533,6 +1548,29 @@ function ProfileScreen({
 
         {scheduleError && <p className="calendarNote error">{scheduleError}</p>}
       </div>
+      {selectedHomework && (
+        <div
+          className="calendarHomeworkOverlay"
+          role="presentation"
+          onClick={() => setSelectedHomework(null)}
+        >
+          <article
+            className="calendarHomeworkDialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="calendar-homework-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <span className="calendarHomeworkBadge">ЗАНЯТИЕ {selectedHomework.lessonNumber}</span>
+            <h2 id="calendar-homework-title">{selectedHomework.title}</h2>
+            <div className="calendarHomeworkBody">
+              <strong>ДОМАШНЕЕ ЗАДАНИЕ</strong>
+              <p>{selectedHomework.body}</p>
+            </div>
+            <button type="button" onClick={() => setSelectedHomework(null)}>Закрыть</button>
+          </article>
+        </div>
+      )}
     </section>
   );
 }
@@ -1544,6 +1582,7 @@ function CalendarMonth({
   cancellableTransferId,
   isAdmin,
   onLessonSelect,
+  onHomeworkSelect,
   onTransferSelect,
 }: {
   month: { key: string; year: number; month: number; label: string };
@@ -1552,6 +1591,7 @@ function CalendarMonth({
   cancellableTransferId: string | null;
   isAdmin: boolean;
   onLessonSelect: (lesson: LessonScheduleItem) => void;
+  onHomeworkSelect: (lesson: LessonScheduleItem) => void;
   onTransferSelect: (transfer: LessonScheduleTransfer) => void;
 }) {
   const today = bishkekDateKey();
@@ -1580,13 +1620,16 @@ function CalendarMonth({
         const isTransfer = Boolean(transfer);
         const isPastOrToday = key <= today;
         const canTransfer = Boolean(isAdmin && mainLesson && key >= today);
+        const canViewHomework = Boolean(
+          mainLesson?.isCompleted && lessonHomeworkByNumber(mainLesson.lessonNumber),
+        );
         const canCancelTransfer = Boolean(
           isAdmin
           && transfer
           && latestTransfer?.id === transfer.id
           && cancellableTransferId === transfer.id,
         );
-        const actionable = canCancelTransfer || canTransfer;
+        const actionable = canCancelTransfer || canViewHomework || canTransfer;
         const className = `calendarDay ${isPastOrToday ? "past" : ""} ${mainLesson ? "lesson" : ""} ${mainLesson && !isPastOrToday ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${key === today ? "today" : ""} ${actionable ? "actionable" : ""}`;
         const content = (
           <>
@@ -1601,12 +1644,17 @@ function CalendarMonth({
               type="button"
               className={className}
               key={key}
-              title={canCancelTransfer ? "Отменить перенос" : `Занятие ${mainLesson?.lessonNumber}`}
+              title={canCancelTransfer
+                ? "Отменить перенос"
+                : canViewHomework ? `Домашнее задание к занятию ${mainLesson?.lessonNumber}` : `Занятие ${mainLesson?.lessonNumber}`}
               aria-label={canCancelTransfer
                 ? `Отменить перенос занятия ${transfer?.lessonNumber}`
-                : `Открыть занятие ${mainLesson?.lessonNumber}, ${cell} число`}
+                : canViewHomework
+                  ? `Открыть домашнее задание к занятию ${mainLesson?.lessonNumber}`
+                  : `Открыть занятие ${mainLesson?.lessonNumber}, ${cell} число`}
               onClick={() => {
                 if (canCancelTransfer && transfer) onTransferSelect(transfer);
+                else if (canViewHomework && mainLesson) onHomeworkSelect(mainLesson);
                 else if (mainLesson) onLessonSelect(mainLesson);
               }}
             >
