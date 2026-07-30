@@ -340,7 +340,7 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /\.md \.zip \.pdf \.html \.pptx/);
   assert.match(app, /accept="\.md,\.markdown,\.zip,\.pdf,\.html,\.htm,\.ppt,\.pptx/);
   assert.match(app, /homeworkSubmitActions/);
-  assert.match(app, /defaultVideoTitle=\{`VibeCoding 1 \| Урок \$\{Math\.max\(1, schedule\.completedLessonCount\)\} Месяц \$\{schedule\.currentCourseMonth\}`\}/);
+  assert.match(app, /defaultVideoTitle=\{`VibeCoding 1 \| Урок \$\{homeworkLessonNumber \?\? Math\.max\(1, schedule\.completedLessonCount\)\} Месяц \$\{schedule\.currentCourseMonth\}`\}/);
   assert.match(app, /className="teacherVideoForm"/);
   assert.match(app, /placeholder=\{"Название темы\\nДомашнее задание\\nTelegram-бот"\}/);
   assert.match(app, /className=\{`dropZone teacherMaterialDrop/);
@@ -630,6 +630,8 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
     readFile(new URL("../drizzle/0009_nebulous_exiles.sql", import.meta.url), "utf8"),
   ]);
   const transferReasonMigration = await readFile(new URL("../drizzle/0010_transfer_reason.sql", import.meta.url), "utf8");
+  const homeworkLessonMigration = await readFile(new URL("../drizzle/0011_homework_lesson_number.sql", import.meta.url), "utf8");
+  const meRoute = await readFile(new URL("../app/api/me/route.ts", import.meta.url), "utf8");
 
   assert.match(leaderboardRoute, /listStudents/);
   assert.match(adminRoute, /createStudent/);
@@ -701,6 +703,10 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(homeworkRoute, /request\.formData/);
   assert.match(homeworkRoute, /findByTelegramUserId/);
   assert.match(homeworkRoute, /createHomeworkSubmission/);
+  assert.match(homeworkRoute, /formText\(form, "lessonNumber"\)/);
+  assert.match(homeworkRoute, /student\.status !== "active"/);
+  assert.match(homeworkRoute, /lesson\?\.isCompleted/);
+  assert.match(homeworkRoute, /lessonHomeworkByNumber\(lessonNumber\)/);
   assert.match(scheduleRoute, /getLessonSchedule/);
   assert.match(adminScheduleRoute, /requireAdmin/);
   assert.match(adminScheduleRoute, /saveLessonSchedule/);
@@ -712,6 +718,11 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(transferScheduleRoute, /ScheduleConflictError/);
   assert.match(transferScheduleRoute, /409/);
   assert.match(homeworkStore, /homework_submissions/);
+  assert.match(homeworkStore, /listSubmittedLessonNumbers/);
+  assert.match(homeworkStore, /ДЗ к этому занятию уже отправлено/);
+  assert.match(meRoute, /submittedLessonNumbers/);
+  assert.match(homeworkLessonMigration, /ADD `lesson_number` integer/);
+  assert.match(homeworkLessonMigration, /homework_submissions_student_lesson_unique/);
   assert.match(homeworkStore, /HOMEWORK_FILES/);
   assert.match(homeworkStore, /bucket\.put/);
   assert.match(homeworkStore, /cleanLinks/);
@@ -818,7 +829,15 @@ test("completed calendar lessons open source-matched homework while future lesso
   assert.match(app, /canViewHomework=\{canOpenHomework\}/);
   assert.match(app, /rolePreviewAvailable\s*\?\s*teacherPreview \|\| studentPreview/);
   assert.match(app, /onHomeworkSelect\(mainLesson\)/);
+  assert.match(app, /canViewTransferReason/);
+  assert.match(app, /Посмотреть причину переноса/);
+  assert.match(app, /className="transferReasonReadOnly"/);
+  assert.match(app, /selectedTransfer\.reason \|\| "Причина не указана"/);
   assert.match(app, /className="calendarHomeworkDialog"/);
+  assert.match(app, /className="calendarHomeworkSubmit"/);
+  assert.match(app, /submittedLessonNumbers\.includes\(selectedHomework\.lessonNumber\)/);
+  assert.match(app, /onSubmitHomework\(lessonNumber\)/);
+  assert.match(app, /form\.set\("lessonNumber", String\(lessonNumber\)\)/);
   assert.match(app, /aria-modal="true"/);
   assert.match(homework, /lessonNumber:\s*1/);
   assert.match(homework, /lessonNumber:\s*9/);
@@ -827,4 +846,6 @@ test("completed calendar lessons open source-matched homework while future lesso
   assert.match(homework, /создать свой публичный SSH ключ/);
   assert.match(css, /\.calendarHomeworkOverlay\s*{[^}]*position:\s*fixed/s);
   assert.match(css, /\.calendarHomeworkBody p\s*{[^}]*white-space:\s*pre-wrap/s);
+  assert.match(css, /\.calendarTransferDialog\.readOnly \.transferDialogActions\s*{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(css, /\.calendarHomeworkSubmit\s*{[^}]*background:\s*var\(--yellow\)/s);
 });

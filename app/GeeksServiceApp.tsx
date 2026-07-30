@@ -813,6 +813,8 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   const [rolePreviewAvailable, setRolePreviewAvailable] = useState(false);
   const [testRole, setTestRole] = useState<TestRole>("service");
   const [currentStudent, setCurrentStudent] = useState<StudentView | null>(null);
+  const [submittedLessonNumbers, setSubmittedLessonNumbers] = useState<number[]>([]);
+  const [homeworkLessonNumber, setHomeworkLessonNumber] = useState<number | null>(null);
   const [leaderboard, setLeaderboard] = useState<StudentView[]>(() => {
     const rankedInitial = rankVisibleStudents(initialStudents);
     if (rankedInitial.length > 0) return rankedInitial;
@@ -1015,11 +1017,13 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
           const me = await api<MeResponse>("/api/me", {}, auth.sessionToken);
           setCurrentStudent(me.student);
           setIsPending(me.pending);
+          setSubmittedLessonNumbers(me.submittedLessonNumbers);
           await refresh(auth.sessionToken, auth.profile.isAdmin);
         } else {
           setRolePreviewAvailable(true);
           setCurrentStudent(null);
           setIsPending(false);
+          setSubmittedLessonNumbers([]);
           await refresh(null, false);
         }
         setState("ready");
@@ -1114,9 +1118,14 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
                 isAdmin={effectiveAdmin}
                 sessionToken={sessionToken}
                 previewRole={rolePreviewAvailable ? testRole : null}
-                defaultVideoTitle={`VibeCoding 1 | Урок ${Math.max(1, schedule.completedLessonCount)} Месяц ${schedule.currentCourseMonth}`}
-                lessonNumber={Math.max(1, schedule.completedLessonCount)}
+                defaultVideoTitle={`VibeCoding 1 | Урок ${homeworkLessonNumber ?? Math.max(1, schedule.completedLessonCount)} Месяц ${schedule.currentCourseMonth}`}
+                lessonNumber={homeworkLessonNumber ?? Math.max(1, schedule.completedLessonCount)}
                 courseMonth={schedule.currentCourseMonth}
+                onHomeworkSubmitted={(lessonNumber) => {
+                  setSubmittedLessonNumbers((current) => (
+                    current.includes(lessonNumber) ? current : [...current, lessonNumber].sort((a, b) => a - b)
+                  ));
+                }}
               />
             </div>
           )}
@@ -1128,6 +1137,11 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
               canViewHomework={canOpenHomework}
               sessionToken={sessionToken}
               previewMode={teacherPreview}
+              submittedLessonNumbers={submittedLessonNumbers}
+              onSubmitHomework={(lessonNumber) => {
+                setHomeworkLessonNumber(lessonNumber);
+                setActiveScreen("homeworkUpload");
+              }}
               onScheduleChange={(next) => {
                 setSchedule(next);
                 setScheduleError(null);
@@ -1207,6 +1221,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
             onHomework={() => {
               if (!canOpenHomework) return;
               hapticImpact("light");
+              setHomeworkLessonNumber(null);
               setActiveScreen("homeworkUpload");
               setShowAdminPanel(false);
               setBulkEditMode(false);
@@ -1233,6 +1248,8 @@ function ProfileScreen({
   canViewHomework,
   sessionToken,
   previewMode,
+  submittedLessonNumbers,
+  onSubmitHomework,
   onScheduleChange,
 }: {
   schedule: ScheduleResponse;
@@ -1241,6 +1258,8 @@ function ProfileScreen({
   canViewHomework: boolean;
   sessionToken: string | null;
   previewMode: boolean;
+  submittedLessonNumbers: number[];
+  onSubmitHomework: (lessonNumber: number) => void;
   onScheduleChange: (next: ScheduleResponse) => void;
 }) {
   const [monthIndex, setMonthIndex] = useState(() => initialScheduleMonthIndex(schedule));
@@ -1516,7 +1535,7 @@ function ProfileScreen({
                 }}
               >
                 <div
-                  className="calendarTransferDialog"
+                  className={`calendarTransferDialog ${selectedTransfer && !isAdmin ? "readOnly" : ""}`}
                   role="dialog"
                   aria-modal="true"
                   aria-label={selectedLesson
@@ -1553,18 +1572,26 @@ function ProfileScreen({
                   ) : selectedTransfer ? (
                     <>
                       <p>Перенесено на {formatScheduleDate(selectedTransfer.rescheduledAt)}</p>
+                      {!isAdmin && (
+                        <div className="transferReasonReadOnly">
+                          <strong>ПРИЧИНА</strong>
+                          <p>{selectedTransfer.reason || "Причина не указана"}</p>
+                        </div>
+                      )}
                     </>
                   ) : null}
-                  <label className="transferReasonField">
-                    <span>Причина переноса (необязательно)</span>
-                    <textarea
-                      value={transferReason}
-                      maxLength={300}
-                      disabled={transferSaving}
-                      placeholder="Например: занятие перенесено по просьбе группы"
-                      onChange={(event) => setTransferReason(event.target.value)}
-                    />
-                  </label>
+                  {isAdmin && (
+                    <label className="transferReasonField">
+                      <span>Причина переноса (необязательно)</span>
+                      <textarea
+                        value={transferReason}
+                        maxLength={300}
+                        disabled={transferSaving}
+                        placeholder="Например: занятие перенесено по просьбе группы"
+                        onChange={(event) => setTransferReason(event.target.value)}
+                      />
+                    </label>
+                  )}
                   {transferError && <p className="transferDialogError">{transferError}</p>}
                   <div className="transferDialogActions">
                     <button
@@ -1578,18 +1605,20 @@ function ProfileScreen({
                     >
                       Закрыть
                     </button>
-                    <button
-                      type="button"
-                      className="transferConfirmButton"
-                      disabled={transferSaving}
-                      onClick={() => void (selectedLesson ? moveSelectedLesson() : saveSelectedTransferReason())}
-                    >
-                      {transferSaving
-                        ? selectedLesson ? "Переношу..." : "Сохраняю..."
-                        : selectedLesson ? "Перенести" : "Сохранить"}
-                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        className="transferConfirmButton"
+                        disabled={transferSaving}
+                        onClick={() => void (selectedLesson ? moveSelectedLesson() : saveSelectedTransferReason())}
+                      >
+                        {transferSaving
+                          ? selectedLesson ? "Переношу..." : "Сохраняю..."
+                          : selectedLesson ? "Перенести" : "Сохранить"}
+                      </button>
+                    )}
                   </div>
-                  {selectedTransfer && schedule.cancellableTransferId === selectedTransfer.id && (
+                  {isAdmin && selectedTransfer && schedule.cancellableTransferId === selectedTransfer.id && (
                     <button
                       type="button"
                       className="transferUndoButton"
@@ -1626,7 +1655,22 @@ function ProfileScreen({
               <strong>ДОМАШНЕЕ ЗАДАНИЕ</strong>
               <p>{selectedHomework.body}</p>
             </div>
-            <button type="button" onClick={() => setSelectedHomework(null)}>Закрыть</button>
+            <div className="calendarHomeworkActions">
+              {!isAdmin && !submittedLessonNumbers.includes(selectedHomework.lessonNumber) && (
+                <button
+                  type="button"
+                  className="calendarHomeworkSubmit"
+                  onClick={() => {
+                    const lessonNumber = selectedHomework.lessonNumber;
+                    setSelectedHomework(null);
+                    onSubmitHomework(lessonNumber);
+                  }}
+                >
+                  Сдать ДЗ
+                </button>
+              )}
+              <button type="button" className="calendarHomeworkClose" onClick={() => setSelectedHomework(null)}>Закрыть</button>
+            </div>
           </article>
         </div>
       )}
@@ -1693,7 +1737,8 @@ function CalendarMonth({
           && cancellableTransferId === transfer.id,
         );
         const canManageTransfer = Boolean(isAdmin && transfer);
-        const actionable = canManageTransfer || canOpenLessonHomework || canTransfer;
+        const canViewTransferReason = Boolean(canViewHomework && transfer);
+        const actionable = canManageTransfer || canViewTransferReason || canOpenLessonHomework || canTransfer;
         const className = `calendarDay ${isPastOrToday ? "past" : ""} ${mainLesson ? "lesson" : ""} ${mainLesson && !isPastOrToday ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${key === today ? "today" : ""} ${actionable ? "actionable" : ""}`;
         const content = (
           <>
@@ -1710,14 +1755,17 @@ function CalendarMonth({
               key={key}
               title={canManageTransfer
                 ? canCancelTransfer ? "Отменить перенос или изменить причину" : "Изменить причину переноса"
+                : canViewTransferReason ? "Посмотреть причину переноса"
                 : canOpenLessonHomework ? `Домашнее задание к занятию ${mainLesson?.lessonNumber}` : `Занятие ${mainLesson?.lessonNumber}`}
               aria-label={canManageTransfer
                 ? `Открыть перенос занятия ${transfer?.lessonNumber}`
+                : canViewTransferReason
+                  ? `Посмотреть причину переноса занятия ${transfer?.lessonNumber}`
                 : canOpenLessonHomework
                   ? `Открыть домашнее задание к занятию ${mainLesson?.lessonNumber}`
                   : `Открыть занятие ${mainLesson?.lessonNumber}, ${cell} число`}
               onClick={() => {
-                if (canManageTransfer && transfer) onTransferSelect(transfer);
+                if ((canManageTransfer || canViewTransferReason) && transfer) onTransferSelect(transfer);
                 else if (canOpenLessonHomework && mainLesson) onHomeworkSelect(mainLesson);
                 else if (mainLesson) onLessonSelect(mainLesson);
               }}
@@ -1782,6 +1830,7 @@ function HomeworkUploadScreen({
   defaultVideoTitle,
   lessonNumber,
   courseMonth,
+  onHomeworkSubmitted,
 }: {
   isAdmin: boolean;
   sessionToken: string | null;
@@ -1789,6 +1838,7 @@ function HomeworkUploadScreen({
   defaultVideoTitle: string;
   lessonNumber: number;
   courseMonth: number;
+  onHomeworkSubmitted: (lessonNumber: number) => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const materialInputRef = useRef<HTMLInputElement | null>(null);
@@ -2402,6 +2452,7 @@ function HomeworkUploadScreen({
         setHomeworkFile(null);
         setHomeworkPhase("done");
         setHomeworkMessage("ДЗ принято в тестовом режиме");
+        onHomeworkSubmitted(lessonNumber);
         hapticNotice("success");
         return;
       }
@@ -2410,6 +2461,7 @@ function HomeworkUploadScreen({
       form.set("links", homeworkLinks.trim());
       form.set("description", homeworkDescription.trim());
       form.set("extra", "");
+      form.set("lessonNumber", String(lessonNumber));
       if (homeworkFile) form.set("file", homeworkFile);
       const result = await apiForm<HomeworkSubmitResponse>("/api/homework/submit", form, sessionToken);
       setHomeworkLinks("");
@@ -2417,6 +2469,7 @@ function HomeworkUploadScreen({
       setHomeworkFile(null);
       setHomeworkPhase("done");
       setHomeworkMessage(result.fileName ? `ДЗ отправлено: ${result.fileName}` : "ДЗ отправлено");
+      onHomeworkSubmitted(result.lessonNumber);
       hapticNotice("success");
     } catch (caught) {
       setHomeworkPhase("error");

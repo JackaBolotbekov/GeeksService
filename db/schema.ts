@@ -30,6 +30,7 @@ export const lessonScores = sqliteTable("lesson_scores", {
 export const homeworkSubmissions = sqliteTable("homework_submissions", {
   id: text("id").primaryKey(),
   studentId: text("student_id").references(() => students.id, { onDelete: "set null" }),
+  lessonNumber: integer("lesson_number"),
   telegramUserId: text("telegram_user_id").notNull(),
   studentName: text("student_name").notNull(),
   links: text("links").notNull().default(""),
@@ -40,7 +41,12 @@ export const homeworkSubmissions = sqliteTable("homework_submissions", {
   fileType: text("file_type"),
   fileSize: integer("file_size"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => ({
+  studentLessonIdx: uniqueIndex("homework_submissions_student_lesson_unique").on(
+    table.studentId,
+    table.lessonNumber,
+  ),
+}));
 
 export const teacherMaterials = sqliteTable("teacher_materials", {
   id: text("id").primaryKey(),

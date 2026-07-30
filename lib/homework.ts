@@ -1,7 +1,8 @@
 import { env } from "cloudflare:workers";
 
 type HomeworkSubmissionInput = {
-  studentId: string | null;
+  studentId: string;
+  lessonNumber: number;
   telegramUserId: string;
   studentName: string;
   links: string;
@@ -40,6 +41,7 @@ async function initializeHomeworkDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS homework_submissions (
       id TEXT PRIMARY KEY,
       student_id TEXT,
+      lesson_number INTEGER,
       telegram_user_id TEXT NOT NULL,
       student_name TEXT NOT NULL,
       links TEXT NOT NULL DEFAULT '',
@@ -53,10 +55,30 @@ async function initializeHomeworkDatabase(): Promise<void> {
       FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE SET NULL
     )
   `).run();
+  const columns = await d1().prepare("PRAGMA table_info(homework_submissions)").all<{ name: string }>();
+  if (!columns.results.some((column) => column.name === "lesson_number")) {
+    await d1().prepare("ALTER TABLE homework_submissions ADD COLUMN lesson_number INTEGER").run();
+  }
+  await d1().prepare(`
+    CREATE UNIQUE INDEX IF NOT EXISTS homework_submissions_student_lesson_unique
+    ON homework_submissions(student_id, lesson_number)
+    WHERE student_id IS NOT NULL AND lesson_number IS NOT NULL
+  `).run();
 }
 
 export async function createHomeworkSubmission(input: HomeworkSubmissionInput): Promise<HomeworkSubmission> {
   await ensureHomeworkDatabase();
+
+  if (!Number.isInteger(input.lessonNumber) || input.lessonNumber < 1 || input.lessonNumber > 12) {
+    throw new Error("Некорректный номер занятия");
+  }
+
+  const existing = await d1().prepare(`
+    SELECT id FROM homework_submissions
+    WHERE student_id = ? AND lesson_number = ?
+    LIMIT 1
+  `).bind(input.studentId, input.lessonNumber).first<{ id: string }>();
+  if (existing) throw new Error("ДЗ к этому занятию уже отправлено");
 
   const links = cleanLinks(input.links);
   const description = cleanText(input.description, "Описание");
@@ -72,6 +94,7 @@ export async function createHomeworkSubmission(input: HomeworkSubmissionInput): 
     INSERT INTO homework_submissions (
       id,
       student_id,
+      lesson_number,
       telegram_user_id,
       student_name,
       links,
@@ -82,10 +105,11 @@ export async function createHomeworkSubmission(input: HomeworkSubmissionInput): 
       file_type,
       file_size
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(
     id,
     input.studentId,
+    input.lessonNumber,
     input.telegramUserId,
     cleanStudentName(input.studentName),
     links,
@@ -101,6 +125,17 @@ export async function createHomeworkSubmission(input: HomeworkSubmissionInput): 
     id,
     fileName: fileMeta?.name ?? null,
   };
+}
+
+export async function listSubmittedLessonNumbers(studentId: string): Promise<number[]> {
+  await ensureHomeworkDatabase();
+  const rows = await d1().prepare(`
+    SELECT lesson_number AS lessonNumber
+    FROM homework_submissions
+    WHERE student_id = ? AND lesson_number BETWEEN 1 AND 12
+    ORDER BY lesson_number
+  `).bind(studentId).all<{ lessonNumber: number }>();
+  return rows.results.map((row) => row.lessonNumber);
 }
 
 function cleanText(value: string, label: string): string {
