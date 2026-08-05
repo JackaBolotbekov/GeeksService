@@ -1,4 +1,4 @@
-import { LESSON_COUNT, type LessonScheduleInput, type LessonScheduleItem, type LessonScheduleTransfer, type ScheduleMonth, type ScheduleResponse } from "./types";
+import { LESSON_COUNT, type LessonScheduleInput, type LessonScheduleItem, type LessonScheduleTransfer, type ScheduleMonth, type ScheduleResponse, type TeacherLessonVideo } from "./types";
 
 export const BISHKEK_TIME_ZONE = "Asia/Bishkek";
 
@@ -42,6 +42,7 @@ export function buildScheduleResponse(
   source: ScheduleSource[],
   now = new Date(),
   transfers: LessonScheduleTransfer[] = [],
+  lessonVideos: TeacherLessonVideo[] = [],
 ): ScheduleResponse {
   const lessons = normalizeLessonSchedule(source).map((lesson) => ({
     ...lesson,
@@ -51,6 +52,11 @@ export function buildScheduleResponse(
   const completed = lessons.filter((lesson) => lesson.isCompleted);
   const currentCourseMonth = completed.at(-1)?.courseMonth ?? lessons[0]?.courseMonth ?? 1;
   const latestTransfer = transfers.at(-1) ?? null;
+  const videos = [...lessonVideos].sort((left, right) => {
+    const rightDate = right.verifiedAt || right.updatedAt;
+    const leftDate = left.verifiedAt || left.updatedAt;
+    return rightDate.localeCompare(leftDate) || right.lessonNumber - left.lessonNumber;
+  });
   return {
     lessons,
     transfers,
@@ -66,6 +72,8 @@ export function buildScheduleResponse(
     currentLabel: `${currentCourseMonth} мес ${completed.length} урок`,
     completedLessonCount: completed.length,
     currentCourseMonth,
+    lessonVideos: videos,
+    latestVideo: videos[0] ?? null,
   };
 }
 

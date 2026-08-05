@@ -1056,6 +1056,79 @@ button:disabled {
   min-height: clamp(112px, 18svh, 150px);
 }
 
+.latestVideoCard {
+  display: grid;
+  gap: 7px;
+  width: 100%;
+  padding: 10px;
+  border: 2px solid #11131b;
+  border-radius: 20px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 5px 5px 0 var(--yellow);
+}
+
+.latestVideoHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.latestVideoHead span {
+  color: #6f7480;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.latestVideoHead a {
+  flex: 0 0 auto;
+  border: 2px solid #11131b;
+  border-radius: 999px;
+  padding: 6px 11px;
+  background: var(--yellow);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 950;
+  text-decoration: none;
+  box-shadow: 2px 2px 0 #11131b;
+}
+
+.latestVideoCard > strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: clamp(17px, 4.7vw, 22px);
+  font-weight: 950;
+  line-height: 1.05;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.latestVideoCard > small {
+  color: #555a66;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.latestVideoFrame {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 2px solid #11131b;
+  border-radius: 16px;
+  background: #11131b;
+}
+
+.latestVideoFrame iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
 .teacherVideoDrop {
   min-height: clamp(132px, 22svh, 180px);
 }

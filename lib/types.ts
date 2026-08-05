@@ -208,4 +208,6 @@ export interface ScheduleResponse {
   currentLabel: string;
   completedLessonCount: number;
   currentCourseMonth: number;
+  lessonVideos: TeacherLessonVideo[];
+  latestVideo: TeacherLessonVideo | null;
 }

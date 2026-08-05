@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { listTeacherLessonVideos } from "./lesson-videos";
 import { buildScheduleResponse, DEFAULT_LESSON_SCHEDULE, normalizeLessonSchedule, restoreLessonTransferSchedule, transferLessonSchedule as calculateLessonTransfer } from "./schedule";
 import { normalizeTelegramUsername, publicTelegramAvatar } from "./telegram";
 import { LESSON_COUNT, type AdminStudentsResponse, type LessonScheduleInput, type LessonScheduleTransfer, type ScheduleResponse, type ScoreCell, type StudentStatus, type StudentView } from "./types";
@@ -321,7 +322,7 @@ export async function listStudents(currentTelegramUserId: string | null = null):
 export async function getLessonSchedule(now = new Date()): Promise<ScheduleResponse> {
   await ensureDatabase();
   const db = d1();
-  const [result, transferResult] = await Promise.all([
+  const [result, transferResult, lessonVideos] = await Promise.all([
     db.prepare(`
       SELECT lesson_number, scheduled_at, course_month, updated_at
       FROM lesson_schedule
@@ -334,6 +335,7 @@ export async function getLessonSchedule(now = new Date()): Promise<ScheduleRespo
       WHERE cancelled_at IS NULL
       ORDER BY created_at ASC
     `).all<LessonScheduleTransferRow>(),
+    listTeacherLessonVideos(),
   ]);
   const rows = result.results ?? [];
   const source = rows.length === LESSON_COUNT
@@ -344,7 +346,7 @@ export async function getLessonSchedule(now = new Date()): Promise<ScheduleRespo
       updatedAt: row.updated_at,
     }))
     : DEFAULT_LESSON_SCHEDULE;
-  return buildScheduleResponse(source, now, (transferResult.results ?? []).map(transferRow));
+  return buildScheduleResponse(source, now, (transferResult.results ?? []).map(transferRow), lessonVideos);
 }
 
 export async function saveLessonSchedule(input: LessonScheduleInput[], now = new Date()): Promise<ScheduleResponse> {

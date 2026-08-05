@@ -328,6 +328,9 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /navIconGeeks/);
   assert.match(app, /uploadArrow/);
   assert.match(app, /HomeworkUploadScreen/);
+  assert.match(app, /latestVideo=\{schedule\.latestVideo\}/);
+  assert.match(app, /LatestVideoCard/);
+  assert.match(app, /youtube\.com\/embed/);
   assert.match(app, /apiForm<HomeworkSubmitResponse>/);
   assert.match(app, /\/api\/homework\/submit/);
   assert.match(app, /homeworkCard/);
@@ -586,6 +589,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.lessonChip\.filled\s*{[^}]*opacity:\s*1/s);
   assert.match(css, /\.lessonChip\.active strong\s*{[^}]*color:\s*var\(--ink\)/s);
   assert.match(css, /\.lessonChip:disabled:not\(\.filled\)/);
+  assert.match(css, /\.latestVideoCard\s*{/);
+  assert.match(css, /\.latestVideoFrame\s*{[^}]*aspect-ratio:\s*16\s*\/\s*9/s);
   await access(new URL("../public/geeks-lightning.svg", import.meta.url));
   assert.doesNotMatch(app, /добавить ученика/);
 });
@@ -745,6 +750,11 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(teacherMaterialsStore, /ON CONFLICT\(session_id, part_number\) DO UPDATE/);
   assert.match(lessonVideosStore, /teacher_lesson_videos/);
   assert.match(lessonVideosStore, /ON CONFLICT\(course_month, lesson_number\)/);
+  assert.match(lessonVideosStore, /listTeacherLessonVideos/);
+  assert.match(store, /listTeacherLessonVideos/);
+  assert.match(store, /buildScheduleResponse\(source, now, \(transferResult\.results \?\? \[\]\)\.map\(transferRow\), lessonVideos\)/);
+  assert.match(schedule, /lessonVideos:\s*videos/);
+  assert.match(schedule, /latestVideo:\s*videos\[0\] \?\? null/);
   assert.match(hosting, /"r2":\s*"HOMEWORK_FILES"/);
   assert.match(store, /SET telegram_username = \?, avatar_url = COALESCE/);
   assert.match(store, /lastScoredAt/);

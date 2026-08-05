@@ -6,7 +6,7 @@ import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, useEffect
 import { lessonHomeworkByNumber, type LessonHomework } from "@/lib/lesson-homework";
 import { validateTeacherMaterialFile } from "@/lib/material-validation";
 import { bishkekDateKey, buildScheduleResponse, defaultTransferTarget, DEFAULT_LESSON_SCHEDULE, localDateParts, transferLessonSchedule } from "@/lib/schedule";
-import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherMaterialUploadPartResponse, TeacherMaterialUploadResponse, TeacherMaterialUploadSessionResponse, TeacherUploadChunkDiagnostic, TeacherUploadJob, TeacherUploadJobResponse, YouTubeUploadReconcileResponse, YouTubeUploadResumeResponse } from "@/lib/types";
+import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherLessonVideo, TeacherMaterialUploadPartResponse, TeacherMaterialUploadResponse, TeacherMaterialUploadSessionResponse, TeacherUploadChunkDiagnostic, TeacherUploadJob, TeacherUploadJobResponse, YouTubeUploadReconcileResponse, YouTubeUploadResumeResponse } from "@/lib/types";
 import {
   initialYouTubeUploadChunkSize,
   isRetriableYouTubeUploadStatus,
@@ -906,6 +906,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
         current.lessons.length > 0 ? current.lessons : DEFAULT_LESSON_SCHEDULE,
         new Date(),
         current.transfers,
+        current.lessonVideos,
       ));
     }, 30000);
     return () => {
@@ -1121,6 +1122,10 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
                 defaultVideoTitle={`VibeCoding 1 | Урок ${homeworkLessonNumber ?? Math.max(1, schedule.completedLessonCount)} Месяц ${schedule.currentCourseMonth}`}
                 lessonNumber={homeworkLessonNumber ?? Math.max(1, schedule.completedLessonCount)}
                 courseMonth={schedule.currentCourseMonth}
+                latestVideo={schedule.latestVideo}
+                onVideoUploaded={() => {
+                  void refreshSchedule();
+                }}
                 onHomeworkSubmitted={(lessonNumber) => {
                   setSubmittedLessonNumbers((current) => (
                     current.includes(lessonNumber) ? current : [...current, lessonNumber].sort((a, b) => a - b)
@@ -1361,6 +1366,7 @@ function ProfileScreen({
         calculated.lessons,
         new Date(),
         [...schedule.transfers, { ...calculated.transfer, reason: transferReason.trim() || null }],
+        schedule.lessonVideos,
       );
       onScheduleChange(optimistic);
       if (previewMode) {
@@ -1403,6 +1409,7 @@ function ProfileScreen({
         schedule.transfers.map((transfer) => (
           transfer.id === selectedTransfer.id ? { ...transfer, reason } : transfer
         )),
+        schedule.lessonVideos,
       );
       onScheduleChange(optimistic);
       if (!previewMode) {
@@ -1436,6 +1443,7 @@ function ProfileScreen({
           snapshot,
           new Date(),
           schedule.transfers.filter((transfer) => transfer.id !== selectedTransfer.id),
+          schedule.lessonVideos,
         ));
         previewSnapshotsRef.current.delete(selectedTransfer.id);
       } else {
@@ -1823,6 +1831,30 @@ function calendarCells(year: number, month: number): Array<number | null> {
   return cells;
 }
 
+function LatestVideoCard({ video }: { video: TeacherLessonVideo | null }) {
+  if (!video) return null;
+  return (
+    <article className="latestVideoCard">
+      <div className="latestVideoHead">
+        <span>Последнее видео</span>
+        <a href={video.videoUrl} target="_blank" rel="noreferrer">
+          Открыть
+        </a>
+      </div>
+      <strong>{video.title}</strong>
+      <small>{video.courseMonth} мес · урок {video.lessonNumber}</small>
+      <div className="latestVideoFrame">
+        <iframe
+          src={`https://www.youtube.com/embed/${encodeURIComponent(video.videoId)}`}
+          title={video.title}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+        />
+      </div>
+    </article>
+  );
+}
+
 function HomeworkUploadScreen({
   isAdmin,
   sessionToken,
@@ -1830,6 +1862,8 @@ function HomeworkUploadScreen({
   defaultVideoTitle,
   lessonNumber,
   courseMonth,
+  latestVideo,
+  onVideoUploaded,
   onHomeworkSubmitted,
 }: {
   isAdmin: boolean;
@@ -1838,6 +1872,8 @@ function HomeworkUploadScreen({
   defaultVideoTitle: string;
   lessonNumber: number;
   courseMonth: number;
+  latestVideo: TeacherLessonVideo | null;
+  onVideoUploaded: () => void;
   onHomeworkSubmitted: (lessonNumber: number) => void;
 }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -2285,6 +2321,7 @@ function HomeworkUploadScreen({
           videoUrl,
           errorMessage: null,
         }).catch(() => undefined);
+        onVideoUploaded();
         try {
           setMaterialSavedName(await saveTeacherMaterial(completedVideo, materialFile));
         } catch (caught) {
@@ -2298,6 +2335,7 @@ function HomeworkUploadScreen({
             videoUrl,
             errorMessage: message,
           }).catch(() => undefined);
+          onVideoUploaded();
           hapticNotice("warning");
           return;
         }
@@ -2310,6 +2348,7 @@ function HomeworkUploadScreen({
         videoUrl,
         errorMessage: null,
       }).catch(() => undefined);
+      onVideoUploaded();
       hapticNotice("success");
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "Не удалось загрузить видео";
@@ -2395,6 +2434,7 @@ function HomeworkUploadScreen({
           setProgress(100);
           setPhase("done");
           setUploadError(null);
+          onVideoUploaded();
           hapticNotice("success");
         }
       } catch {
@@ -2415,6 +2455,7 @@ function HomeworkUploadScreen({
     activeUploadJob?.phase,
     isAdmin,
     localJobId,
+    onVideoUploaded,
     phase,
     previewRole,
     sessionToken,
@@ -2506,6 +2547,8 @@ function HomeworkUploadScreen({
           event.preventDefault();
           void submitHomework();
         }}>
+          <LatestVideoCard video={latestVideo} />
+
           <label className="uploadField">
             <textarea
               className="compactTextarea homeworkLinksInput"
@@ -2634,6 +2677,8 @@ function HomeworkUploadScreen({
             onChange={(event) => setDescription(event.target.value)}
           />
         </label>
+
+        <LatestVideoCard video={latestVideo} />
 
         <label
           className={`dropZone teacherVideoDrop ${dragActive ? "active" : ""} ${file ? "hasFile" : ""}`}

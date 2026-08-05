@@ -122,6 +122,16 @@ export async function teacherLessonVideo(
   return row ? toLessonVideo(row) : null;
 }
 
+export async function listTeacherLessonVideos(): Promise<TeacherLessonVideo[]> {
+  await ensureTeacherLessonVideosDatabase();
+  const result = await d1().prepare(`
+    SELECT *
+    FROM teacher_lesson_videos
+    ORDER BY verified_at DESC, updated_at DESC
+  `).all<LessonVideoRow>();
+  return (result.results ?? []).map(toLessonVideo);
+}
+
 function toLessonVideo(row: LessonVideoRow): TeacherLessonVideo {
   return {
     id: row.id,
