@@ -830,32 +830,44 @@ test("admin score picker stays in one compact row", async () => {
   assert.doesNotMatch(css, /\.scorePicker\s*{[^}]*repeat\(4/s);
 });
 
-test("completed calendar lessons open source-matched homework while future lessons stay inactive", async () => {
+test("calendar lessons open source-matched homework and graduation copy dialog", async () => {
   const app = await readFile(new URL("../app/GeeksServiceApp.tsx", import.meta.url), "utf8");
   const homework = await readFile(new URL("../lib/lesson-homework.ts", import.meta.url), "utf8");
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-  assert.match(app, /canViewHomework\s*&&\s*mainLesson\?\.isCompleted\s*&&\s*lessonHomeworkByNumber/);
+  assert.match(app, /const GRADUATION_DATE_KEY = "2026-08-14"/);
+  assert.match(app, /body:\s*"финальная проектная работа"/);
+  assert.match(app, /canViewHomework\s*&&\s*mainLesson\s*&&\s*lessonHomeworkByNumber/);
   assert.match(app, /canViewHomework=\{canOpenHomework\}/);
   assert.match(app, /rolePreviewAvailable\s*\?\s*teacherPreview \|\| studentPreview/);
   assert.match(app, /onHomeworkSelect\(mainLesson\)/);
+  assert.match(app, /onGraduationSelect\(\)/);
+  assert.match(app, /navigator\.clipboard\.writeText/);
+  assert.match(app, /aria-label="Скопировать домашнее задание"/);
   assert.match(app, /canViewTransferReason/);
   assert.match(app, /Посмотреть причину переноса/);
   assert.match(app, /className="transferReasonReadOnly"/);
   assert.match(app, /selectedTransfer\.reason \|\| "Причина не указана"/);
   assert.match(app, /className="calendarHomeworkDialog"/);
+  assert.match(app, /className="calendarHomeworkCopy"/);
   assert.match(app, /className="calendarHomeworkSubmit"/);
-  assert.match(app, /submittedLessonNumbers\.includes\(selectedHomework\.lessonNumber\)/);
+  assert.match(app, /selectedHomework\.canSubmit/);
+  assert.match(app, /selectedHomework\.lessonNumber !== null/);
   assert.match(app, /onSubmitHomework\(lessonNumber\)/);
   assert.match(app, /form\.set\("lessonNumber", String\(lessonNumber\)\)/);
   assert.match(app, /aria-modal="true"/);
   assert.match(homework, /lessonNumber:\s*1/);
-  assert.match(homework, /lessonNumber:\s*9/);
-  assert.doesNotMatch(homework, /lessonNumber:\s*10/);
+  assert.match(homework, /lessonNumber:\s*12/);
   assert.match(homework, /Создать через v0, Lovable или Bolt\.new/);
   assert.match(homework, /создать свой публичный SSH ключ/);
+  assert.match(homework, /Командная разработка GitHub/);
+  assert.match(homework, /подсказка от GPT с анализом/);
+  assert.match(homework, /Финальная проектная работа/);
   assert.match(css, /\.calendarHomeworkOverlay\s*{[^}]*position:\s*fixed/s);
+  assert.match(css, /\.calendarDay\.graduation\s*{[^}]*background:\s*#a8f0be/s);
+  assert.match(css, /\.calendarHomeworkDialog\s*{[^}]*overflow-x:\s*hidden/s);
   assert.match(css, /\.calendarHomeworkBody p\s*{[^}]*white-space:\s*pre-wrap/s);
+  assert.match(css, /\.calendarHomeworkBody p\s*{[^}]*overflow-wrap:\s*anywhere/s);
   assert.match(css, /\.calendarTransferDialog\.readOnly \.transferDialogActions\s*{[^}]*grid-template-columns:\s*1fr/s);
   assert.match(css, /\.calendarHomeworkSubmit\s*{[^}]*background:\s*var\(--yellow\)/s);
 });

@@ -1499,6 +1499,33 @@ button.calendarDay {
   z-index: 2;
 }
 
+.calendarDay.graduation {
+  background: #a8f0be;
+  border-color: rgba(17, 19, 27, 0.42);
+  color: var(--ink);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.48),
+    inset 0 -3px 0 rgba(17, 19, 27, 0.08);
+}
+
+.calendarDay.graduation .graduationBadge {
+  left: 50%;
+  right: auto;
+  width: max-content;
+  min-width: max-content;
+  height: 18px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 9px;
+  background: #d8ffe1;
+  box-shadow: 0 2px 0 rgba(17, 19, 27, 0.18);
+  font-size: clamp(7px, 1.9vw, 9px);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  z-index: 2;
+}
+
 .calendarDay.today {
   border-color: var(--yellow);
   background: #fffdf6;
@@ -1546,6 +1573,8 @@ button.calendarDay {
 .calendarHomeworkDialog {
   width: min(360px, 100%);
   max-height: min(82svh, 620px);
+  max-width: calc(100vw - 36px);
+  overflow-x: hidden;
   overflow-y: auto;
   display: grid;
   gap: 12px;
@@ -1559,8 +1588,17 @@ button.calendarDay {
   overscroll-behavior: contain;
 }
 
+.calendarHomeworkHead {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .calendarHomeworkBadge {
   justify-self: start;
+  min-width: 0;
   padding: 6px 10px;
   border-radius: 9px;
   background: var(--yellow);
@@ -1570,14 +1608,38 @@ button.calendarDay {
   letter-spacing: 0.06em;
 }
 
+.calendarHomeworkCopy {
+  width: 36px;
+  height: 34px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 2px solid #11131b;
+  border-radius: 11px;
+  background: #fffdf6;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 950;
+  box-shadow: 0 2px 0 #11131b;
+}
+
+.calendarHomeworkCopy:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 #11131b;
+}
+
 .calendarHomeworkDialog h2 {
+  min-width: 0;
   margin: 0;
   font-size: clamp(23px, 7vw, 30px);
   font-weight: 950;
   line-height: 1.04;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .calendarHomeworkBody {
+  min-width: 0;
   display: grid;
   gap: 8px;
   padding: 14px;
@@ -1594,12 +1656,22 @@ button.calendarDay {
 }
 
 .calendarHomeworkBody p {
+  min-width: 0;
   margin: 0;
   color: var(--ink);
   font-size: 15px;
   font-weight: 750;
   line-height: 1.35;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.calendarHomeworkCopyStatus {
+  margin: -4px 0 0;
+  color: #6d717b;
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .calendarHomeworkActions {

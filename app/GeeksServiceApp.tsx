@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
-import { lessonHomeworkByNumber, type LessonHomework } from "@/lib/lesson-homework";
+import { lessonHomeworkByNumber } from "@/lib/lesson-homework";
 import { validateTeacherMaterialFile } from "@/lib/material-validation";
 import { bishkekDateKey, buildScheduleResponse, defaultTransferTarget, DEFAULT_LESSON_SCHEDULE, localDateParts, transferLessonSchedule } from "@/lib/schedule";
 import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherLessonVideo, TeacherMaterialUploadPartResponse, TeacherMaterialUploadResponse, TeacherMaterialUploadSessionResponse, TeacherUploadChunkDiagnostic, TeacherUploadJob, TeacherUploadJobResponse, YouTubeUploadReconcileResponse, YouTubeUploadResumeResponse } from "@/lib/types";
@@ -32,6 +32,15 @@ const TEST_ROLE_LABELS: Record<TestRole, string> = {
   service: "SERVICE",
   students: "STUDENTS",
   teachers: "TEACHERS",
+};
+
+const GRADUATION_DATE_KEY = "2026-08-14";
+const GRADUATION_HOMEWORK: CalendarHomeworkContent = {
+  badge: "ВЫПУСК",
+  title: "Выпуск",
+  body: "финальная проектная работа",
+  lessonNumber: null,
+  canSubmit: false,
 };
 
 type YouTubeUploadSessionResponse = {
@@ -69,6 +78,14 @@ type StudentPatch = {
 type StudentDraft = {
   displayName: string;
   telegram: string;
+};
+
+type CalendarHomeworkContent = {
+  badge: string;
+  title: string;
+  body: string;
+  lessonNumber: number | null;
+  canSubmit: boolean;
 };
 
 type StudentChange = {
@@ -1271,7 +1288,8 @@ function ProfileScreen({
   const [monthMotion, setMonthMotion] = useState<"prev" | "next" | "idle">("idle");
   const [selectedLesson, setSelectedLesson] = useState<LessonScheduleItem | null>(null);
   const [selectedTransfer, setSelectedTransfer] = useState<LessonScheduleTransfer | null>(null);
-  const [selectedHomework, setSelectedHomework] = useState<LessonHomework | null>(null);
+  const [selectedHomework, setSelectedHomework] = useState<CalendarHomeworkContent | null>(null);
+  const [homeworkCopyMessage, setHomeworkCopyMessage] = useState<string | null>(null);
   const [transferTargetLocal, setTransferTargetLocal] = useState("");
   const [transferReason, setTransferReason] = useState("");
   const [transferSaving, setTransferSaving] = useState(false);
@@ -1290,6 +1308,7 @@ function ProfileScreen({
         setSelectedLesson(null);
         setSelectedTransfer(null);
         setSelectedHomework(null);
+        setHomeworkCopyMessage(null);
         setTransferError(null);
         setMonthMotion(step > 0 ? "next" : "prev");
         hapticSelection();
@@ -1323,13 +1342,29 @@ function ProfileScreen({
   };
 
   const selectHomework = (lesson: LessonScheduleItem) => {
-    if (suppressDayClickRef.current || !lesson.isCompleted) return;
+    if (suppressDayClickRef.current) return;
     const homework = lessonHomeworkByNumber(lesson.lessonNumber);
     if (!homework) return;
     hapticSelection();
     setSelectedLesson(null);
     setSelectedTransfer(null);
-    setSelectedHomework(homework);
+    setHomeworkCopyMessage(null);
+    setSelectedHomework({
+      badge: `ЗАНЯТИЕ ${homework.lessonNumber}`,
+      title: homework.title,
+      body: homework.body,
+      lessonNumber: homework.lessonNumber,
+      canSubmit: true,
+    });
+  };
+
+  const selectGraduation = () => {
+    if (suppressDayClickRef.current) return;
+    hapticSelection();
+    setSelectedLesson(null);
+    setSelectedTransfer(null);
+    setHomeworkCopyMessage(null);
+    setSelectedHomework(GRADUATION_HOMEWORK);
   };
 
   const selectTransfer = (transfer: LessonScheduleTransfer) => {
@@ -1474,11 +1509,25 @@ function ProfileScreen({
         setSelectedLesson(null);
         setSelectedTransfer(null);
         setSelectedHomework(null);
+        setHomeworkCopyMessage(null);
       }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [selectedHomework, selectedLesson, selectedTransfer, transferSaving]);
+
+  const copySelectedHomework = async () => {
+    if (!selectedHomework) return;
+    const text = `${selectedHomework.badge}\n${selectedHomework.title}\n\n${selectedHomework.body}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setHomeworkCopyMessage("Скопировано");
+      hapticNotice("success");
+    } catch {
+      setHomeworkCopyMessage("Не удалось скопировать");
+      hapticNotice("error");
+    }
+  };
 
   return (
     <section className="profileScreen">
@@ -1528,6 +1577,7 @@ function ProfileScreen({
                 canViewHomework={canViewHomework}
                 onLessonSelect={selectLesson}
                 onHomeworkSelect={selectHomework}
+                onGraduationSelect={selectGraduation}
                 onTransferSelect={selectTransfer}
               />
             </div>
@@ -1648,7 +1698,10 @@ function ProfileScreen({
         <div
           className="calendarHomeworkOverlay"
           role="presentation"
-          onClick={() => setSelectedHomework(null)}
+          onClick={() => {
+            setSelectedHomework(null);
+            setHomeworkCopyMessage(null);
+          }}
         >
           <article
             className="calendarHomeworkDialog"
@@ -1657,27 +1710,49 @@ function ProfileScreen({
             aria-labelledby="calendar-homework-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <span className="calendarHomeworkBadge">ЗАНЯТИЕ {selectedHomework.lessonNumber}</span>
+            <div className="calendarHomeworkHead">
+              <span className="calendarHomeworkBadge">{selectedHomework.badge}</span>
+              <button
+                type="button"
+                className="calendarHomeworkCopy"
+                aria-label="Скопировать домашнее задание"
+                onClick={() => void copySelectedHomework()}
+              >
+                ⧉
+              </button>
+            </div>
             <h2 id="calendar-homework-title">{selectedHomework.title}</h2>
             <div className="calendarHomeworkBody">
               <strong>ДОМАШНЕЕ ЗАДАНИЕ</strong>
               <p>{selectedHomework.body}</p>
             </div>
+            {homeworkCopyMessage && <p className="calendarHomeworkCopyStatus">{homeworkCopyMessage}</p>}
             <div className="calendarHomeworkActions">
-              {!isAdmin && !submittedLessonNumbers.includes(selectedHomework.lessonNumber) && (
+              {selectedHomework.canSubmit && selectedHomework.lessonNumber !== null && !isAdmin && !submittedLessonNumbers.includes(selectedHomework.lessonNumber) && (
                 <button
                   type="button"
                   className="calendarHomeworkSubmit"
                   onClick={() => {
+                    if (selectedHomework.lessonNumber === null) return;
                     const lessonNumber = selectedHomework.lessonNumber;
                     setSelectedHomework(null);
+                    setHomeworkCopyMessage(null);
                     onSubmitHomework(lessonNumber);
                   }}
                 >
                   Сдать ДЗ
                 </button>
               )}
-              <button type="button" className="calendarHomeworkClose" onClick={() => setSelectedHomework(null)}>Закрыть</button>
+              <button
+                type="button"
+                className="calendarHomeworkClose"
+                onClick={() => {
+                  setSelectedHomework(null);
+                  setHomeworkCopyMessage(null);
+                }}
+              >
+                Закрыть
+              </button>
             </div>
           </article>
         </div>
@@ -1695,6 +1770,7 @@ function CalendarMonth({
   canViewHomework,
   onLessonSelect,
   onHomeworkSelect,
+  onGraduationSelect,
   onTransferSelect,
 }: {
   month: { key: string; year: number; month: number; label: string };
@@ -1705,6 +1781,7 @@ function CalendarMonth({
   canViewHomework: boolean;
   onLessonSelect: (lesson: LessonScheduleItem) => void;
   onHomeworkSelect: (lesson: LessonScheduleItem) => void;
+  onGraduationSelect: () => void;
   onTransferSelect: (transfer: LessonScheduleTransfer) => void;
 }) {
   const today = bishkekDateKey();
@@ -1731,13 +1808,15 @@ function CalendarMonth({
         const completed = dayLessons.some((lesson) => lesson.isCompleted);
         const transfer = transferByDate.get(key) ?? null;
         const isTransfer = Boolean(transfer);
+        const isGraduation = key === GRADUATION_DATE_KEY;
         const isPastOrToday = key <= today;
         const canTransfer = Boolean(isAdmin && mainLesson && key >= today);
         const canOpenLessonHomework = Boolean(
           canViewHomework
-          && mainLesson?.isCompleted
+          && mainLesson
           && lessonHomeworkByNumber(mainLesson.lessonNumber),
         );
+        const canOpenGraduation = Boolean(canViewHomework && isGraduation);
         const canCancelTransfer = Boolean(
           isAdmin
           && transfer
@@ -1746,13 +1825,14 @@ function CalendarMonth({
         );
         const canManageTransfer = Boolean(isAdmin && transfer);
         const canViewTransferReason = Boolean(canViewHomework && transfer);
-        const actionable = canManageTransfer || canViewTransferReason || canOpenLessonHomework || canTransfer;
-        const className = `calendarDay ${isPastOrToday ? "past" : ""} ${mainLesson ? "lesson" : ""} ${mainLesson && !isPastOrToday ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${key === today ? "today" : ""} ${actionable ? "actionable" : ""}`;
+        const actionable = canManageTransfer || canViewTransferReason || canTransfer || canOpenLessonHomework || canOpenGraduation;
+        const className = `calendarDay ${isPastOrToday ? "past" : ""} ${mainLesson ? "lesson" : ""} ${mainLesson && !isPastOrToday ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${isGraduation ? "graduation" : ""} ${key === today ? "today" : ""} ${actionable ? "actionable" : ""}`;
         const content = (
           <>
             <strong>{cell}</strong>
             {mainLesson && <small className="calendarLessonBadge">{mainLesson.lessonNumber}</small>}
             {isTransfer && <small className="calendarLessonBadge transferBadge">ПЕРЕНОС</small>}
+            {isGraduation && <small className="calendarLessonBadge graduationBadge">Выпуск</small>}
           </>
         );
         if (actionable) {
@@ -1764,17 +1844,25 @@ function CalendarMonth({
               title={canManageTransfer
                 ? canCancelTransfer ? "Отменить перенос или изменить причину" : "Изменить причину переноса"
                 : canViewTransferReason ? "Посмотреть причину переноса"
-                : canOpenLessonHomework ? `Домашнее задание к занятию ${mainLesson?.lessonNumber}` : `Занятие ${mainLesson?.lessonNumber}`}
+                : canTransfer ? `Перенести занятие ${mainLesson?.lessonNumber}`
+                : canOpenLessonHomework ? `Домашнее задание к занятию ${mainLesson?.lessonNumber}`
+                : canOpenGraduation ? "Выпуск" : `Занятие ${mainLesson?.lessonNumber}`}
               aria-label={canManageTransfer
                 ? `Открыть перенос занятия ${transfer?.lessonNumber}`
                 : canViewTransferReason
                   ? `Посмотреть причину переноса занятия ${transfer?.lessonNumber}`
+                : canTransfer
+                  ? `Перенести занятие ${mainLesson?.lessonNumber}`
                 : canOpenLessonHomework
                   ? `Открыть домашнее задание к занятию ${mainLesson?.lessonNumber}`
+                : canOpenGraduation
+                  ? "Открыть выпуск"
                   : `Открыть занятие ${mainLesson?.lessonNumber}, ${cell} число`}
               onClick={() => {
                 if ((canManageTransfer || canViewTransferReason) && transfer) onTransferSelect(transfer);
+                else if (canTransfer && mainLesson) onLessonSelect(mainLesson);
                 else if (canOpenLessonHomework && mainLesson) onHomeworkSelect(mainLesson);
+                else if (canOpenGraduation) onGraduationSelect();
                 else if (mainLesson) onLessonSelect(mainLesson);
               }}
             >
