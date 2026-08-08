@@ -330,7 +330,8 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /HomeworkUploadScreen/);
   assert.match(app, /latestVideo=\{schedule\.latestVideo\}/);
   assert.match(app, /LatestVideoCard/);
-  assert.match(app, /youtube\.com\/embed/);
+  assert.match(app, /CopyVideoLinkLine/);
+  assert.doesNotMatch(app, /youtube\.com\/embed/);
   assert.match(app, /apiForm<HomeworkSubmitResponse>/);
   assert.match(app, /\/api\/homework\/submit/);
   assert.match(app, /homeworkCard/);
@@ -590,7 +591,13 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(css, /\.lessonChip\.active strong\s*{[^}]*color:\s*var\(--ink\)/s);
   assert.match(css, /\.lessonChip:disabled:not\(\.filled\)/);
   assert.match(css, /\.latestVideoCard\s*{/);
-  assert.match(css, /\.latestVideoFrame\s*{[^}]*aspect-ratio:\s*16\s*\/\s*9/s);
+  assert.match(app, /function CopyVideoLinkLine/);
+  assert.match(app, /navigator\.clipboard\.writeText\(url\)/);
+  assert.doesNotMatch(app, /youtube\.com\/embed/);
+  assert.doesNotMatch(app, /className="latestVideoFrame"/);
+  assert.match(css, /\.latestVideoCopyLine\s*{/);
+  assert.match(css, /\.latestVideoCopyStatus\s*{/);
+  assert.doesNotMatch(css, /\.latestVideoFrame\s*{/);
   await access(new URL("../public/geeks-lightning.svg", import.meta.url));
   assert.doesNotMatch(app, /добавить ученика/);
 });

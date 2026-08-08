@@ -1058,75 +1058,127 @@ button:disabled {
 
 .latestVideoCard {
   display: grid;
-  gap: 7px;
+  gap: 4px;
   width: 100%;
-  padding: 10px;
+  padding: 6px;
   border: 2px solid #11131b;
-  border-radius: 20px;
+  border-radius: 18px;
   background: var(--card);
   color: var(--ink);
-  box-shadow: 5px 5px 0 var(--yellow);
+  box-shadow: 4px 4px 0 var(--yellow);
 }
 
-.latestVideoHead {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+.copyVideoLinkWrap {
+  position: relative;
+  display: grid;
+  gap: 4px;
   min-width: 0;
 }
 
-.latestVideoHead span {
-  color: #6f7480;
-  font-size: 11px;
-  font-weight: 950;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+.latestVideoCopyLine {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "label title"
+    "label url";
+  align-items: center;
+  gap: 2px 8px;
+  padding: 7px 9px;
+  border: 2px solid #11131b;
+  border-radius: 14px;
+  background: #fffdf3;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 900;
+  text-align: left;
+  box-shadow: 2px 2px 0 #11131b;
+  cursor: pointer;
+  transition:
+    transform 140ms ease,
+    box-shadow 140ms ease,
+    filter 140ms ease;
 }
 
-.latestVideoHead a {
-  flex: 0 0 auto;
+.latestVideoCopyLine:active {
+  transform: translateY(1px);
+  box-shadow: 1px 1px 0 #11131b;
+  filter: brightness(0.98);
+}
+
+.latestVideoCopyLine span {
+  grid-area: label;
+  min-width: 54px;
+  max-width: 86px;
+  overflow: hidden;
+  padding: 5px 7px;
   border: 2px solid #11131b;
   border-radius: 999px;
-  padding: 6px 11px;
   background: var(--yellow);
   color: var(--ink);
-  font-size: 13px;
+  font-size: 10px;
   font-weight: 950;
-  text-decoration: none;
+  line-height: 1;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
   box-shadow: 2px 2px 0 #11131b;
 }
 
-.latestVideoCard > strong {
+.latestVideoCopyLine strong,
+.latestVideoCopyLine small {
   min-width: 0;
   overflow: hidden;
-  color: var(--ink);
-  font-size: clamp(17px, 4.7vw, 22px);
-  font-weight: 950;
-  line-height: 1.05;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.latestVideoCard > small {
-  color: #555a66;
-  font-size: 13px;
-  font-weight: 900;
+.latestVideoCopyLine strong {
+  grid-area: title;
+  font-size: clamp(14px, 3.7vw, 16px);
+  font-weight: 950;
+  line-height: 1.05;
 }
 
-.latestVideoFrame {
-  aspect-ratio: 16 / 9;
-  overflow: hidden;
-  border: 2px solid #11131b;
-  border-radius: 16px;
-  background: #11131b;
+.latestVideoCopyLine small {
+  grid-area: url;
+  color: #686d78;
+  font-size: clamp(11px, 3vw, 13px);
+  font-weight: 850;
+  line-height: 1.1;
 }
 
-.latestVideoFrame iframe {
-  display: block;
+.latestVideoCopyStatus {
+  justify-self: end;
+  color: #315f35;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.uploadResultMessage {
+  display: grid;
+  gap: 6px;
+  padding: 6px;
+}
+
+.uploadResultMessage .copyVideoLinkWrap {
   width: 100%;
-  height: 100%;
-  border: 0;
+}
+
+.materialSavedLine {
+  min-width: 0;
+  overflow: hidden;
+  color: #24562b;
+  font-size: 13px;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .teacherVideoDrop {

@@ -1923,23 +1923,52 @@ function LatestVideoCard({ video }: { video: TeacherLessonVideo | null }) {
   if (!video) return null;
   return (
     <article className="latestVideoCard">
-      <div className="latestVideoHead">
-        <span>Последнее видео</span>
-        <a href={video.videoUrl} target="_blank" rel="noreferrer">
-          Открыть
-        </a>
-      </div>
-      <strong>{video.title}</strong>
-      <small>{video.courseMonth} мес · урок {video.lessonNumber}</small>
-      <div className="latestVideoFrame">
-        <iframe
-          src={`https://www.youtube.com/embed/${encodeURIComponent(video.videoId)}`}
-          title={video.title}
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowFullScreen
-        />
-      </div>
+      <CopyVideoLinkLine
+        label="Последнее видео"
+        title={`${video.lessonNumber} урок · ${video.title}`}
+        url={video.videoUrl}
+      />
     </article>
+  );
+}
+
+function CopyVideoLinkLine({ label, title, url }: { label: string; title: string; url: string }) {
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const copyTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
+  const copyLink = async () => {
+    if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopyStatus("Скопировано");
+      hapticNotice("success");
+    } catch {
+      setCopyStatus("Не удалось скопировать");
+      hapticNotice("error");
+    }
+    copyTimerRef.current = window.setTimeout(() => setCopyStatus(null), 1400);
+  };
+
+  return (
+    <div className="copyVideoLinkWrap">
+      <button
+        type="button"
+        className="latestVideoCopyLine"
+        aria-label={`Скопировать ссылку: ${title}`}
+        onClick={() => void copyLink()}
+      >
+        <span>{label}</span>
+        <strong>{title}</strong>
+        <small>{url}</small>
+      </button>
+      {copyStatus && <em className="latestVideoCopyStatus">{copyStatus}</em>}
+    </div>
   );
 }
 
@@ -2861,14 +2890,18 @@ function HomeworkUploadScreen({
 
         {uploadError && <p className="uploadMessage error">{uploadError}</p>}
         {resultUrl && (
-          <p className="uploadMessage success">
+          <div className="uploadMessage success uploadResultMessage">
             {resultUrl === "#test-video" ? (
               "Видео подготовлено в тестовом режиме"
             ) : (
-              <>Видео готово: <a href={resultUrl} target="_blank" rel="noreferrer">{resultUrl}</a></>
+              <CopyVideoLinkLine
+                label="Видео готово"
+                title={`${lessonNumber} урок · ${title.trim() || defaultVideoTitle}`}
+                url={resultUrl}
+              />
             )}
-            {materialSavedName && <><br />Допматериал сохранён: {materialSavedName}</>}
-          </p>
+            {materialSavedName && <small className="materialSavedLine">Допматериал сохранён: {materialSavedName}</small>}
+          </div>
         )}
 
         <div className="uploadActions teacherUploadActions">
