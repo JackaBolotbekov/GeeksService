@@ -280,6 +280,7 @@ test("ships Geeks Service page instead of the starter preview", async () => {
 
   assert.match(page, /GeeksServiceApp/);
   assert.match(layout, /Geeks Service/);
+  assert.match(layout, /<html lang="ru" suppressHydrationWarning>/);
   assert.match(layout, /telegram\.org\/js\/telegram-web-app\.js/);
   assert.match(layout, /maximumScale:\s*1/);
   assert.match(layout, /userScalable:\s*false/);
@@ -341,8 +342,11 @@ test("leaderboard cards show score instead of generic TOP badges", async () => {
   assert.match(app, /method:\s*"DELETE"/);
   assert.match(app, /cancelSelectedTransfer/);
   assert.match(app, /defaultTransferTarget/);
-  assert.match(app, /type="datetime-local"/);
+  assert.match(app, /type="date"/);
+  assert.match(app, /type="time"/);
+  assert.match(app, /TransferDateTimeFields/);
   assert.match(app, /calendarTransferDialog/);
+  assert.match(app, /if \(selectedLesson \|\| selectedTransfer \|\| selectedGraduationAt\)/);
   assert.match(app, /schedule\.transfers/);
   assert.doesNotMatch(app, /new Set\(\["2026-07-17"\]\)/);
   assert.match(app, /datetimeLocalToBishkekIso/);
@@ -911,6 +915,8 @@ test("calendar lessons open source-matched homework and graduation copy dialog",
   assert.match(app, /setSelectedGraduationAt\(schedule\.graduationAt\)/);
   assert.match(app, /\/api\/admin\/schedule\/graduation/);
   assert.match(app, /Новая дата и время выпуска/);
+  assert.match(css, /\.transferDateTimeGrid\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.35fr\)\s*minmax\(0,\s*0\.85fr\)/s);
+  assert.match(css, /\.calendarTransferDialog\s*{[^}]*overflow-x:\s*hidden/s);
   assert.match(app, /transferGraduationSchedule/);
   assert.match(app, /body:\s*"финальная проектная работа"/);
   assert.match(app, /canViewHomework\s*&&\s*mainLesson\s*&&\s*lessonHomeworkByNumber/);

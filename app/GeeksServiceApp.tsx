@@ -1604,9 +1604,16 @@ function ProfileScreen({
             className={`calendarCard ${(selectedLesson || selectedTransfer || selectedGraduationAt) ? "dialogOpen" : ""}`}
             aria-label="Календарь занятий"
             onPointerDown={(event) => {
+              if (selectedLesson || selectedTransfer || selectedGraduationAt) return;
               swipeStartRef.current = { x: event.clientX, y: event.clientY };
             }}
-            onPointerUp={(event) => finishSwipe(event.clientX, event.clientY)}
+            onPointerUp={(event) => {
+              if (selectedLesson || selectedTransfer || selectedGraduationAt) {
+                swipeStartRef.current = null;
+                return;
+              }
+              finishSwipe(event.clientX, event.clientY);
+            }}
             onPointerCancel={() => {
               swipeStartRef.current = null;
             }}
@@ -1684,31 +1691,25 @@ function ProfileScreen({
                         <span>Ближайшее по расписанию</span>
                         <strong>{formatScheduleDate(defaultTransferTarget(selectedLesson.scheduledAt))}</strong>
                       </button>
-                      <label className="transferTargetField">
-                        <span>Или выбери дату и время</span>
-                        <input
-                          type="datetime-local"
-                          value={transferTargetLocal}
-                          min={selectedLesson.scheduledAt.slice(0, 16)}
-                          disabled={transferSaving}
-                          onChange={(event) => setTransferTargetLocal(event.target.value)}
-                        />
-                      </label>
+                      <TransferDateTimeFields
+                        legend="Или выбери дату и время"
+                        value={transferTargetLocal}
+                        min={selectedLesson.scheduledAt.slice(0, 16)}
+                        disabled={transferSaving}
+                        onChange={setTransferTargetLocal}
+                      />
                       <p className="transferScheduleHint">Дальше занятия продолжатся по ПН / СР / ПТ.</p>
                     </>
                   ) : selectedGraduationAt ? (
                     <>
                       <p>Сейчас: {formatScheduleDate(selectedGraduationAt)}</p>
-                      <label className="transferTargetField">
-                        <span>Новая дата и время выпуска</span>
-                        <input
-                          type="datetime-local"
-                          value={transferTargetLocal}
-                          min={bishkekDateTimeLocalMin()}
-                          disabled={transferSaving}
-                          onChange={(event) => setTransferTargetLocal(event.target.value)}
-                        />
-                      </label>
+                      <TransferDateTimeFields
+                        legend="Новая дата и время выпуска"
+                        value={transferTargetLocal}
+                        min={bishkekDateTimeLocalMin()}
+                        disabled={transferSaving}
+                        onChange={setTransferTargetLocal}
+                      />
                     </>
                   ) : selectedTransfer ? (
                     <>
@@ -1986,6 +1987,58 @@ function datetimeLocalToBishkekIso(value: string): string {
   const trimmed = value.trim();
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) throw new Error("Дата и время обязательны");
   return `${trimmed}:00+06:00`;
+}
+
+function TransferDateTimeFields({
+  legend,
+  value,
+  min,
+  disabled,
+  onChange,
+}: {
+  legend: string;
+  value: string;
+  min: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const [dateValue = "", timeValue = ""] = value.split("T");
+  const [minDate = "", minTime = ""] = min.split("T");
+
+  const updatePart = (nextDate: string, nextTime: string) => {
+    if (!nextDate || !nextTime) return;
+    const nextValue = `${nextDate}T${nextTime}`;
+    onChange(nextValue < min ? min : nextValue);
+  };
+
+  return (
+    <fieldset className="transferTargetFields">
+      <legend>{legend}</legend>
+      <div className="transferDateTimeGrid">
+        <label className="transferTargetField">
+          <span>Дата</span>
+          <input
+            type="date"
+            value={dateValue}
+            min={minDate}
+            disabled={disabled}
+            onChange={(event) => updatePart(event.target.value, timeValue || minTime || "16:00")}
+          />
+        </label>
+        <label className="transferTargetField">
+          <span>Время</span>
+          <input
+            type="time"
+            value={timeValue}
+            min={dateValue === minDate ? minTime : undefined}
+            step={300}
+            disabled={disabled}
+            onChange={(event) => updatePart(dateValue || minDate, event.target.value)}
+          />
+        </label>
+      </div>
+    </fieldset>
+  );
 }
 
 function bishkekDateTimeLocalMin(date = new Date()): string {
