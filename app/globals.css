@@ -1794,6 +1794,10 @@ button.calendarDay {
   letter-spacing: 0.06em;
 }
 
+.transferPreviewBadge.graduation {
+  background: #a8f0be;
+}
+
 .calendarTransferDialog .transferDialogError {
   color: #b62828;
   font-size: 12px;

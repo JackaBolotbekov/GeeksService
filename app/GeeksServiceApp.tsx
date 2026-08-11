@@ -5,7 +5,7 @@
 import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
 import { lessonHomeworkByNumber } from "@/lib/lesson-homework";
 import { validateTeacherMaterialFile } from "@/lib/material-validation";
-import { bishkekDateKey, buildScheduleResponse, defaultTransferTarget, DEFAULT_LESSON_SCHEDULE, localDateParts, transferLessonSchedule } from "@/lib/schedule";
+import { bishkekDateKey, buildScheduleResponse, defaultTransferTarget, DEFAULT_LESSON_SCHEDULE, localDateParts, transferGraduationSchedule, transferLessonSchedule } from "@/lib/schedule";
 import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherLessonVideo, TeacherMaterialUploadPartResponse, TeacherMaterialUploadResponse, TeacherMaterialUploadSessionResponse, TeacherUploadChunkDiagnostic, TeacherUploadJob, TeacherUploadJobResponse, YouTubeUploadReconcileResponse, YouTubeUploadResumeResponse } from "@/lib/types";
 import {
   initialYouTubeUploadChunkSize,
@@ -34,7 +34,6 @@ const TEST_ROLE_LABELS: Record<TestRole, string> = {
   teachers: "TEACHERS",
 };
 
-const GRADUATION_DATE_KEY = "2026-08-14";
 const GRADUATION_HOMEWORK: CalendarHomeworkContent = {
   badge: "ВЫПУСК",
   title: "Выпуск",
@@ -924,6 +923,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
         new Date(),
         current.transfers,
         current.lessonVideos,
+        current.graduationAt,
       ));
     }, 30000);
     return () => {
@@ -1288,6 +1288,7 @@ function ProfileScreen({
   const [monthMotion, setMonthMotion] = useState<"prev" | "next" | "idle">("idle");
   const [selectedLesson, setSelectedLesson] = useState<LessonScheduleItem | null>(null);
   const [selectedTransfer, setSelectedTransfer] = useState<LessonScheduleTransfer | null>(null);
+  const [selectedGraduationAt, setSelectedGraduationAt] = useState<string | null>(null);
   const [selectedHomework, setSelectedHomework] = useState<CalendarHomeworkContent | null>(null);
   const [homeworkCopyMessage, setHomeworkCopyMessage] = useState<string | null>(null);
   const [transferTargetLocal, setTransferTargetLocal] = useState("");
@@ -1307,6 +1308,7 @@ function ProfileScreen({
       if (next !== current) {
         setSelectedLesson(null);
         setSelectedTransfer(null);
+        setSelectedGraduationAt(null);
         setSelectedHomework(null);
         setHomeworkCopyMessage(null);
         setTransferError(null);
@@ -1336,6 +1338,7 @@ function ProfileScreen({
     hapticSelection();
     setTransferError(null);
     setSelectedTransfer(null);
+    setSelectedGraduationAt(null);
     setSelectedLesson(lesson);
     setTransferTargetLocal(defaultTransferTarget(lesson.scheduledAt).slice(0, 16));
     setTransferReason("");
@@ -1348,6 +1351,7 @@ function ProfileScreen({
     hapticSelection();
     setSelectedLesson(null);
     setSelectedTransfer(null);
+    setSelectedGraduationAt(null);
     setHomeworkCopyMessage(null);
     setSelectedHomework({
       badge: `ЗАНЯТИЕ ${homework.lessonNumber}`,
@@ -1359,12 +1363,23 @@ function ProfileScreen({
   };
 
   const selectGraduation = () => {
-    if (suppressDayClickRef.current) return;
+    if (suppressDayClickRef.current || transferSaving) return;
     hapticSelection();
     setSelectedLesson(null);
     setSelectedTransfer(null);
+    setTransferError(null);
     setHomeworkCopyMessage(null);
-    setSelectedHomework(GRADUATION_HOMEWORK);
+    if (isAdmin) {
+      setSelectedHomework(null);
+      setSelectedGraduationAt(schedule.graduationAt);
+      setTransferTargetLocal(schedule.graduationAt.slice(0, 16));
+    } else {
+      setSelectedGraduationAt(null);
+      setSelectedHomework({
+        ...GRADUATION_HOMEWORK,
+        title: `Выпуск · ${formatScheduleDate(schedule.graduationAt)}`,
+      });
+    }
   };
 
   const selectTransfer = (transfer: LessonScheduleTransfer) => {
@@ -1372,6 +1387,7 @@ function ProfileScreen({
     hapticSelection();
     setTransferError(null);
     setSelectedLesson(null);
+    setSelectedGraduationAt(null);
     setSelectedTransfer(transfer);
     setTransferReason(transfer.reason ?? "");
   };
@@ -1402,6 +1418,7 @@ function ProfileScreen({
         new Date(),
         [...schedule.transfers, { ...calculated.transfer, reason: transferReason.trim() || null }],
         schedule.lessonVideos,
+        schedule.graduationAt,
       );
       onScheduleChange(optimistic);
       if (previewMode) {
@@ -1431,6 +1448,49 @@ function ProfileScreen({
     }
   };
 
+  const moveSelectedGraduation = async () => {
+    if (!selectedGraduationAt || !transferTargetLocal || transferSaving) return;
+    const previous = schedule;
+    setTransferSaving(true);
+    setTransferError(null);
+    try {
+      const targetGraduationAt = datetimeLocalToBishkekIso(transferTargetLocal);
+      const calculated = transferGraduationSchedule(
+        schedule.graduationAt,
+        selectedGraduationAt,
+        targetGraduationAt,
+        schedule.lessons,
+      );
+      const optimistic = buildScheduleResponse(
+        schedule.lessons,
+        new Date(),
+        schedule.transfers,
+        schedule.lessonVideos,
+        calculated,
+      );
+      onScheduleChange(optimistic);
+      if (!previewMode) {
+        if (!sessionToken) throw new Error("Нет сессии преподавателя");
+        const response = await api<ScheduleResponse>("/api/admin/schedule/graduation", {
+          method: "PUT",
+          body: JSON.stringify({
+            expectedGraduationAt: selectedGraduationAt,
+            targetGraduationAt,
+          }),
+        }, sessionToken);
+        onScheduleChange(response);
+      }
+      hapticNotice("success");
+      setSelectedGraduationAt(null);
+    } catch (caught) {
+      onScheduleChange(previous);
+      hapticNotice("error");
+      setTransferError(caught instanceof Error ? caught.message : "Не удалось перенести выпуск");
+    } finally {
+      setTransferSaving(false);
+    }
+  };
+
   const saveSelectedTransferReason = async () => {
     if (!selectedTransfer || transferSaving) return;
     const previous = schedule;
@@ -1445,6 +1505,7 @@ function ProfileScreen({
           transfer.id === selectedTransfer.id ? { ...transfer, reason } : transfer
         )),
         schedule.lessonVideos,
+        schedule.graduationAt,
       );
       onScheduleChange(optimistic);
       if (!previewMode) {
@@ -1479,6 +1540,7 @@ function ProfileScreen({
           new Date(),
           schedule.transfers.filter((transfer) => transfer.id !== selectedTransfer.id),
           schedule.lessonVideos,
+          schedule.graduationAt,
         ));
         previewSnapshotsRef.current.delete(selectedTransfer.id);
       } else {
@@ -1503,18 +1565,19 @@ function ProfileScreen({
   };
 
   useEffect(() => {
-    if (!selectedLesson && !selectedTransfer && !selectedHomework) return;
+    if (!selectedLesson && !selectedTransfer && !selectedGraduationAt && !selectedHomework) return;
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape" && !transferSaving) {
         setSelectedLesson(null);
         setSelectedTransfer(null);
+        setSelectedGraduationAt(null);
         setSelectedHomework(null);
         setHomeworkCopyMessage(null);
       }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [selectedHomework, selectedLesson, selectedTransfer, transferSaving]);
+  }, [selectedGraduationAt, selectedHomework, selectedLesson, selectedTransfer, transferSaving]);
 
   const copySelectedHomework = async () => {
     if (!selectedHomework) return;
@@ -1538,7 +1601,7 @@ function ProfileScreen({
 
         {currentMonth && (
           <div
-            className={`calendarCard ${(selectedLesson || selectedTransfer) ? "dialogOpen" : ""}`}
+            className={`calendarCard ${(selectedLesson || selectedTransfer || selectedGraduationAt) ? "dialogOpen" : ""}`}
             aria-label="Календарь занятий"
             onPointerDown={(event) => {
               swipeStartRef.current = { x: event.clientX, y: event.clientY };
@@ -1572,6 +1635,7 @@ function ProfileScreen({
                 month={currentMonth}
                 lessons={schedule.lessons}
                 transfers={schedule.transfers}
+                graduationAt={schedule.graduationAt}
                 cancellableTransferId={schedule.cancellableTransferId}
                 isAdmin={isAdmin}
                 canViewHomework={canViewHomework}
@@ -1581,7 +1645,7 @@ function ProfileScreen({
                 onTransferSelect={selectTransfer}
               />
             </div>
-            {(selectedLesson || selectedTransfer) && (
+            {(selectedLesson || selectedTransfer || selectedGraduationAt) && (
               <div
                 className="calendarTransferOverlay"
                 role="presentation"
@@ -1589,6 +1653,7 @@ function ProfileScreen({
                   if (!transferSaving) {
                     setSelectedLesson(null);
                     setSelectedTransfer(null);
+                    setSelectedGraduationAt(null);
                   }
                 }}
               >
@@ -1596,13 +1661,17 @@ function ProfileScreen({
                   className={`calendarTransferDialog ${selectedTransfer && !isAdmin ? "readOnly" : ""}`}
                   role="dialog"
                   aria-modal="true"
-                  aria-label={selectedLesson
-                    ? `Перенос занятия ${selectedLesson.lessonNumber}`
-                    : `Перенос занятия ${selectedTransfer?.lessonNumber}`}
+                  aria-label={selectedGraduationAt
+                    ? "Перенос выпуска"
+                    : selectedLesson
+                      ? `Перенос занятия ${selectedLesson.lessonNumber}`
+                      : `Перенос занятия ${selectedTransfer?.lessonNumber}`}
                   onClick={(event) => event.stopPropagation()}
                 >
-                  <span className="transferPreviewBadge">ПЕРЕНОС</span>
-                  <strong>Занятие {selectedLesson?.lessonNumber ?? selectedTransfer?.lessonNumber}</strong>
+                  <span className={`transferPreviewBadge ${selectedGraduationAt ? "graduation" : ""}`}>
+                    {selectedGraduationAt ? "ВЫПУСК" : "ПЕРЕНОС"}
+                  </span>
+                  <strong>{selectedGraduationAt ? "Выпуск" : `Занятие ${selectedLesson?.lessonNumber ?? selectedTransfer?.lessonNumber}`}</strong>
                   {selectedLesson ? (
                     <>
                       <p>Сейчас: {formatScheduleDate(selectedLesson.scheduledAt)}</p>
@@ -1627,6 +1696,20 @@ function ProfileScreen({
                       </label>
                       <p className="transferScheduleHint">Дальше занятия продолжатся по ПН / СР / ПТ.</p>
                     </>
+                  ) : selectedGraduationAt ? (
+                    <>
+                      <p>Сейчас: {formatScheduleDate(selectedGraduationAt)}</p>
+                      <label className="transferTargetField">
+                        <span>Новая дата и время выпуска</span>
+                        <input
+                          type="datetime-local"
+                          value={transferTargetLocal}
+                          min={bishkekDateTimeLocalMin()}
+                          disabled={transferSaving}
+                          onChange={(event) => setTransferTargetLocal(event.target.value)}
+                        />
+                      </label>
+                    </>
                   ) : selectedTransfer ? (
                     <>
                       <p>Перенесено на {formatScheduleDate(selectedTransfer.rescheduledAt)}</p>
@@ -1638,7 +1721,7 @@ function ProfileScreen({
                       )}
                     </>
                   ) : null}
-                  {isAdmin && (
+                  {isAdmin && !selectedGraduationAt && (
                     <label className="transferReasonField">
                       <span>Причина переноса (необязательно)</span>
                       <textarea
@@ -1659,6 +1742,7 @@ function ProfileScreen({
                       onClick={() => {
                         setSelectedLesson(null);
                         setSelectedTransfer(null);
+                        setSelectedGraduationAt(null);
                       }}
                     >
                       Закрыть
@@ -1668,11 +1752,17 @@ function ProfileScreen({
                         type="button"
                         className="transferConfirmButton"
                         disabled={transferSaving}
-                        onClick={() => void (selectedLesson ? moveSelectedLesson() : saveSelectedTransferReason())}
+                        onClick={() => void (
+                          selectedLesson
+                            ? moveSelectedLesson()
+                            : selectedGraduationAt
+                              ? moveSelectedGraduation()
+                              : saveSelectedTransferReason()
+                        )}
                       >
                         {transferSaving
-                          ? selectedLesson ? "Переношу..." : "Сохраняю..."
-                          : selectedLesson ? "Перенести" : "Сохранить"}
+                          ? selectedTransfer ? "Сохраняю..." : "Переношу..."
+                          : selectedTransfer ? "Сохранить" : "Перенести"}
                       </button>
                     )}
                   </div>
@@ -1765,6 +1855,7 @@ function CalendarMonth({
   month,
   lessons,
   transfers,
+  graduationAt,
   cancellableTransferId,
   isAdmin,
   canViewHomework,
@@ -1776,6 +1867,7 @@ function CalendarMonth({
   month: { key: string; year: number; month: number; label: string };
   lessons: ScheduleResponse["lessons"];
   transfers: ScheduleResponse["transfers"];
+  graduationAt: string;
   cancellableTransferId: string | null;
   isAdmin: boolean;
   canViewHomework: boolean;
@@ -1808,7 +1900,7 @@ function CalendarMonth({
         const completed = dayLessons.some((lesson) => lesson.isCompleted);
         const transfer = transferByDate.get(key) ?? null;
         const isTransfer = Boolean(transfer);
-        const isGraduation = key === GRADUATION_DATE_KEY;
+        const isGraduation = key === graduationAt.slice(0, 10);
         const isPastOrToday = key <= today;
         const canTransfer = Boolean(isAdmin && mainLesson && key >= today);
         const canOpenLessonHomework = Boolean(
@@ -1816,6 +1908,7 @@ function CalendarMonth({
           && mainLesson
           && lessonHomeworkByNumber(mainLesson.lessonNumber),
         );
+        const canManageGraduation = Boolean(isAdmin && isGraduation);
         const canOpenGraduation = Boolean(canViewHomework && isGraduation);
         const canCancelTransfer = Boolean(
           isAdmin
@@ -1825,7 +1918,7 @@ function CalendarMonth({
         );
         const canManageTransfer = Boolean(isAdmin && transfer);
         const canViewTransferReason = Boolean(canViewHomework && transfer);
-        const actionable = canManageTransfer || canViewTransferReason || canTransfer || canOpenLessonHomework || canOpenGraduation;
+        const actionable = canManageGraduation || canManageTransfer || canViewTransferReason || canTransfer || canOpenLessonHomework || canOpenGraduation;
         const className = `calendarDay ${isPastOrToday ? "past" : ""} ${mainLesson ? "lesson" : ""} ${mainLesson && !isPastOrToday ? "upcoming" : ""} ${completed ? "completed" : ""} ${isTransfer ? "transfer" : ""} ${isGraduation ? "graduation" : ""} ${key === today ? "today" : ""} ${actionable ? "actionable" : ""}`;
         const content = (
           <>
@@ -1841,13 +1934,17 @@ function CalendarMonth({
               type="button"
               className={className}
               key={key}
-              title={canManageTransfer
+              title={canManageGraduation
+                ? "Перенести выпуск"
+                : canManageTransfer
                 ? canCancelTransfer ? "Отменить перенос или изменить причину" : "Изменить причину переноса"
                 : canViewTransferReason ? "Посмотреть причину переноса"
                 : canTransfer ? `Перенести занятие ${mainLesson?.lessonNumber}`
                 : canOpenLessonHomework ? `Домашнее задание к занятию ${mainLesson?.lessonNumber}`
                 : canOpenGraduation ? "Выпуск" : `Занятие ${mainLesson?.lessonNumber}`}
-              aria-label={canManageTransfer
+              aria-label={canManageGraduation
+                ? `Перенести выпуск, сейчас ${formatScheduleDate(graduationAt)}`
+                : canManageTransfer
                 ? `Открыть перенос занятия ${transfer?.lessonNumber}`
                 : canViewTransferReason
                   ? `Посмотреть причину переноса занятия ${transfer?.lessonNumber}`
@@ -1859,7 +1956,8 @@ function CalendarMonth({
                   ? "Открыть выпуск"
                   : `Открыть занятие ${mainLesson?.lessonNumber}, ${cell} число`}
               onClick={() => {
-                if ((canManageTransfer || canViewTransferReason) && transfer) onTransferSelect(transfer);
+                if (canManageGraduation) onGraduationSelect();
+                else if ((canManageTransfer || canViewTransferReason) && transfer) onTransferSelect(transfer);
                 else if (canTransfer && mainLesson) onLessonSelect(mainLesson);
                 else if (canOpenLessonHomework && mainLesson) onHomeworkSelect(mainLesson);
                 else if (canOpenGraduation) onGraduationSelect();
@@ -1886,8 +1984,22 @@ function CalendarMonth({
 
 function datetimeLocalToBishkekIso(value: string): string {
   const trimmed = value.trim();
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) throw new Error("Дата и время урока обязательны");
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed)) throw new Error("Дата и время обязательны");
   return `${trimmed}:00+06:00`;
+}
+
+function bishkekDateTimeLocalMin(date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bishkek",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}T${value("hour")}:${value("minute")}`;
 }
 
 function initialScheduleMonthIndex(schedule: ScheduleResponse): number {

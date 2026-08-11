@@ -75,6 +75,52 @@ test("restores a legacy future transfer before its original start time", async (
   );
 });
 
+test("moves graduation date and time with schedule conflict guards", async () => {
+  const {
+    DEFAULT_GRADUATION_AT,
+    DEFAULT_LESSON_SCHEDULE,
+    buildScheduleResponse,
+    transferGraduationSchedule,
+  } = await importTypeScriptModule("../lib/schedule.ts");
+  const target = "2026-09-01T18:30:00+06:00";
+  const now = new Date("2026-08-11T05:00:00Z");
+
+  assert.equal(
+    transferGraduationSchedule(
+      DEFAULT_GRADUATION_AT,
+      DEFAULT_GRADUATION_AT,
+      target,
+      DEFAULT_LESSON_SCHEDULE,
+      now,
+    ),
+    target,
+  );
+  assert.throws(
+    () => transferGraduationSchedule(
+      DEFAULT_GRADUATION_AT,
+      "2026-08-15T16:00:00+06:00",
+      target,
+      DEFAULT_LESSON_SCHEDULE,
+      now,
+    ),
+    /Дата выпуска уже изменилась/,
+  );
+  assert.throws(
+    () => transferGraduationSchedule(
+      DEFAULT_GRADUATION_AT,
+      DEFAULT_GRADUATION_AT,
+      "2026-08-03T15:00:00+06:00",
+      DEFAULT_LESSON_SCHEDULE,
+      now,
+    ),
+    /будущее время|после последнего занятия/,
+  );
+
+  const response = buildScheduleResponse(DEFAULT_LESSON_SCHEDULE, now, [], [], target);
+  assert.equal(response.graduationAt, target);
+  assert.equal(response.months.at(-1).key, "2026-09");
+});
+
 test("teacher material validation preserves names and rejects unsafe files", async () => {
   const {
     expectedMaterialUploadPartSize,
@@ -643,6 +689,8 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   ]);
   const transferReasonMigration = await readFile(new URL("../drizzle/0010_transfer_reason.sql", import.meta.url), "utf8");
   const homeworkLessonMigration = await readFile(new URL("../drizzle/0011_homework_lesson_number.sql", import.meta.url), "utf8");
+  const graduationScheduleRoute = await readFile(new URL("../app/api/admin/schedule/graduation/route.ts", import.meta.url), "utf8");
+  const graduationScheduleMigration = await readFile(new URL("../drizzle/0012_graduation_schedule.sql", import.meta.url), "utf8");
   const meRoute = await readFile(new URL("../app/api/me/route.ts", import.meta.url), "utf8");
 
   assert.match(leaderboardRoute, /listStudents/);
@@ -729,6 +777,11 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(transferScheduleRoute, /targetScheduledAt/);
   assert.match(transferScheduleRoute, /ScheduleConflictError/);
   assert.match(transferScheduleRoute, /409/);
+  assert.match(graduationScheduleRoute, /requireAdmin/);
+  assert.match(graduationScheduleRoute, /transferScheduledGraduation/);
+  assert.match(graduationScheduleRoute, /expectedGraduationAt/);
+  assert.match(graduationScheduleRoute, /targetGraduationAt/);
+  assert.match(graduationScheduleRoute, /ScheduleConflictError/);
   assert.match(homeworkStore, /homework_submissions/);
   assert.match(homeworkStore, /listSubmittedLessonNumbers/);
   assert.match(homeworkStore, /ДЗ к этому занятию уже отправлено/);
@@ -759,7 +812,8 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(lessonVideosStore, /ON CONFLICT\(course_month, lesson_number\)/);
   assert.match(lessonVideosStore, /listTeacherLessonVideos/);
   assert.match(store, /listTeacherLessonVideos/);
-  assert.match(store, /buildScheduleResponse\(source, now, \(transferResult\.results \?\? \[\]\)\.map\(transferRow\), lessonVideos\)/);
+  assert.match(store, /buildScheduleResponse\(/);
+  assert.match(store, /courseSettings\?\.graduation_at \?\? DEFAULT_GRADUATION_AT/);
   assert.match(schedule, /lessonVideos:\s*videos/);
   assert.match(schedule, /latestVideo:\s*videos\[0\] \?\? null/);
   assert.match(hosting, /"r2":\s*"HOMEWORK_FILES"/);
@@ -786,6 +840,9 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(store, /Отменить можно только последний активный перенос/);
   assert.match(store, /db\.batch\(statements\)/);
   assert.match(store, /saveLessonSchedule/);
+  assert.match(store, /course_schedule_settings/);
+  assert.match(store, /seedCourseScheduleSettingsIfEmpty/);
+  assert.match(store, /transferScheduledGraduation/);
   assert.match(schedule, /DEFAULT_LESSON_SCHEDULE/);
   assert.match(schedule, /2026-07-22T16:00:00\+06:00/);
   assert.match(schedule, /2026-07-24T16:00:00\+06:00/);
@@ -799,9 +856,14 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(schedule, /defaultTransferTarget/);
   assert.match(schedule, /nextTeachingSlot\(/);
   assert.match(schedule, /ScheduleConflictError/);
+  assert.match(schedule, /DEFAULT_GRADUATION_AT/);
+  assert.match(schedule, /transferGraduationSchedule/);
+  assert.match(schedule, /\{ scheduledAt: graduationAt \}/);
   assert.match(schema, /lessonSchedule/);
   assert.match(schema, /lesson_schedule/);
   assert.match(schema, /lessonScheduleTransfers/);
+  assert.match(schema, /courseScheduleSettings/);
+  assert.match(schema, /course_schedule_settings/);
   assert.match(schema, /teacherMaterials/);
   assert.match(schema, /teacher_materials/);
   assert.match(schema, /teacherMaterialUploadSessions/);
@@ -828,6 +890,8 @@ test("includes leaderboard, homework, materials, schedule, and admin API surface
   assert.match(materialUploadMigration, /CREATE TABLE `teacher_material_upload_sessions`/);
   assert.match(materialUploadMigration, /CREATE TABLE `teacher_material_upload_parts`/);
   assert.match(materialUploadMigration, /teacher_material_upload_parts_session_part_unique/);
+  assert.match(graduationScheduleMigration, /CREATE TABLE `course_schedule_settings`/);
+  assert.match(graduationScheduleMigration, /2026-08-14T16:00:00\+06:00/);
 });
 
 test("admin score picker stays in one compact row", async () => {
@@ -842,7 +906,12 @@ test("calendar lessons open source-matched homework and graduation copy dialog",
   const homework = await readFile(new URL("../lib/lesson-homework.ts", import.meta.url), "utf8");
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-  assert.match(app, /const GRADUATION_DATE_KEY = "2026-08-14"/);
+  assert.doesNotMatch(app, /GRADUATION_DATE_KEY/);
+  assert.match(app, /graduationAt=\{schedule\.graduationAt\}/);
+  assert.match(app, /setSelectedGraduationAt\(schedule\.graduationAt\)/);
+  assert.match(app, /\/api\/admin\/schedule\/graduation/);
+  assert.match(app, /Новая дата и время выпуска/);
+  assert.match(app, /transferGraduationSchedule/);
   assert.match(app, /body:\s*"финальная проектная работа"/);
   assert.match(app, /canViewHomework\s*&&\s*mainLesson\s*&&\s*lessonHomeworkByNumber/);
   assert.match(app, /canViewHomework=\{canOpenHomework\}/);
@@ -872,6 +941,7 @@ test("calendar lessons open source-matched homework and graduation copy dialog",
   assert.match(homework, /Финальная проектная работа/);
   assert.match(css, /\.calendarHomeworkOverlay\s*{[^}]*position:\s*fixed/s);
   assert.match(css, /\.calendarDay\.graduation\s*{[^}]*background:\s*#a8f0be/s);
+  assert.match(css, /\.transferPreviewBadge\.graduation\s*{[^}]*background:\s*#a8f0be/s);
   assert.match(css, /\.calendarHomeworkDialog\s*{[^}]*overflow-x:\s*hidden/s);
   assert.match(css, /\.calendarHomeworkBody p\s*{[^}]*white-space:\s*pre-wrap/s);
   assert.match(css, /\.calendarHomeworkBody p\s*{[^}]*overflow-wrap:\s*anywhere/s);

@@ -204,6 +204,7 @@ export interface ScheduleResponse {
   lessons: LessonScheduleItem[];
   transfers: LessonScheduleTransfer[];
   cancellableTransferId: string | null;
+  graduationAt: string;
   months: ScheduleMonth[];
   currentLabel: string;
   completedLessonCount: number;

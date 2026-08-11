@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { listTeacherLessonVideos } from "./lesson-videos";
-import { buildScheduleResponse, DEFAULT_LESSON_SCHEDULE, normalizeLessonSchedule, restoreLessonTransferSchedule, transferLessonSchedule as calculateLessonTransfer } from "./schedule";
+import { buildScheduleResponse, DEFAULT_GRADUATION_AT, DEFAULT_LESSON_SCHEDULE, normalizeLessonSchedule, restoreLessonTransferSchedule, transferGraduationSchedule as calculateGraduationTransfer, transferLessonSchedule as calculateLessonTransfer } from "./schedule";
 import { normalizeTelegramUsername, publicTelegramAvatar } from "./telegram";
 import { LESSON_COUNT, type AdminStudentsResponse, type LessonScheduleInput, type LessonScheduleTransfer, type ScheduleResponse, type ScoreCell, type StudentStatus, type StudentView } from "./types";
 
@@ -37,6 +37,11 @@ type LessonScheduleTransferRow = {
   before_schedule_json: string | null;
   cancelled_at: string | null;
   created_at: string;
+};
+
+type CourseScheduleSettingsRow = {
+  graduation_at: string;
+  updated_at: string | null;
 };
 
 type CreateStudentInput = {
@@ -134,11 +139,19 @@ async function initializeDatabase(): Promise<void> {
         UNIQUE(lesson_number, original_scheduled_at)
       )
     `),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS course_schedule_settings (
+        id TEXT PRIMARY KEY,
+        graduation_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `),
   ]);
   await ensureTransferHistoryColumns(db);
 
   await seedLessonScheduleIfEmpty(db);
   await seedExistingLessonTransferIfEmpty(db);
+  await seedCourseScheduleSettingsIfEmpty(db);
 
   const existing = await db.prepare("SELECT COUNT(*) AS count FROM students").first<{ count: number }>();
   if ((existing?.count ?? 0) > 0) return;
@@ -322,7 +335,7 @@ export async function listStudents(currentTelegramUserId: string | null = null):
 export async function getLessonSchedule(now = new Date()): Promise<ScheduleResponse> {
   await ensureDatabase();
   const db = d1();
-  const [result, transferResult, lessonVideos] = await Promise.all([
+  const [result, transferResult, courseSettings, lessonVideos] = await Promise.all([
     db.prepare(`
       SELECT lesson_number, scheduled_at, course_month, updated_at
       FROM lesson_schedule
@@ -335,6 +348,11 @@ export async function getLessonSchedule(now = new Date()): Promise<ScheduleRespo
       WHERE cancelled_at IS NULL
       ORDER BY created_at ASC
     `).all<LessonScheduleTransferRow>(),
+    db.prepare(`
+      SELECT graduation_at, updated_at
+      FROM course_schedule_settings
+      WHERE id = 'graduation'
+    `).first<CourseScheduleSettingsRow>(),
     listTeacherLessonVideos(),
   ]);
   const rows = result.results ?? [];
@@ -346,7 +364,20 @@ export async function getLessonSchedule(now = new Date()): Promise<ScheduleRespo
       updatedAt: row.updated_at,
     }))
     : DEFAULT_LESSON_SCHEDULE;
-  return buildScheduleResponse(source, now, (transferResult.results ?? []).map(transferRow), lessonVideos);
+  return buildScheduleResponse(
+    source,
+    now,
+    (transferResult.results ?? []).map(transferRow),
+    lessonVideos,
+    courseSettings?.graduation_at ?? DEFAULT_GRADUATION_AT,
+  );
+}
+
+async function seedCourseScheduleSettingsIfEmpty(db: D1Database): Promise<void> {
+  await db.prepare(`
+    INSERT OR IGNORE INTO course_schedule_settings (id, graduation_at)
+    VALUES ('graduation', ?)
+  `).bind(DEFAULT_GRADUATION_AT).run();
 }
 
 export async function saveLessonSchedule(input: LessonScheduleInput[], now = new Date()): Promise<ScheduleResponse> {
@@ -428,6 +459,49 @@ export async function transferScheduledLesson(
     calculated.transfer.createdAt,
   ));
   await db.batch(statements);
+  return getLessonSchedule(now);
+}
+
+export async function transferScheduledGraduation(
+  input: { expectedGraduationAt: string; targetGraduationAt: string },
+  now = new Date(),
+): Promise<ScheduleResponse> {
+  await ensureDatabase();
+  const db = d1();
+  const [courseSettings, lessonResult] = await Promise.all([
+    db.prepare(`
+      SELECT graduation_at, updated_at
+      FROM course_schedule_settings
+      WHERE id = 'graduation'
+    `).first<CourseScheduleSettingsRow>(),
+    db.prepare(`
+      SELECT lesson_number, scheduled_at, course_month, updated_at
+      FROM lesson_schedule
+      ORDER BY lesson_number ASC
+    `).all<LessonScheduleRow>(),
+  ]);
+  const currentGraduationAt = courseSettings?.graduation_at ?? DEFAULT_GRADUATION_AT;
+  const lessons = (lessonResult.results ?? []).map((row) => ({
+    lessonNumber: row.lesson_number,
+    scheduledAt: row.scheduled_at,
+    courseMonth: row.course_month,
+    updatedAt: row.updated_at,
+  }));
+  const targetGraduationAt = calculateGraduationTransfer(
+    currentGraduationAt,
+    input.expectedGraduationAt,
+    input.targetGraduationAt,
+    lessons,
+    now,
+  );
+  const result = await db.prepare(`
+    UPDATE course_schedule_settings
+    SET graduation_at = ?, updated_at = ?
+    WHERE id = 'graduation' AND graduation_at = ?
+  `).bind(targetGraduationAt, now.toISOString(), input.expectedGraduationAt).run();
+  if ((result.meta?.changes ?? 0) < 1) {
+    throw new ScheduleConflictError("Дата выпуска уже изменилась. Обнови календарь и попробуй снова");
+  }
   return getLessonSchedule(now);
 }
 

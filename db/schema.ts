@@ -185,3 +185,9 @@ export const lessonScheduleTransfers = sqliteTable("lesson_schedule_transfers", 
     table.originalScheduledAt,
   ),
 }));
+
+export const courseScheduleSettings = sqliteTable("course_schedule_settings", {
+  id: text("id").primaryKey(),
+  graduationAt: text("graduation_at").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

@@ -1,6 +1,7 @@
 import { LESSON_COUNT, type LessonScheduleInput, type LessonScheduleItem, type LessonScheduleTransfer, type ScheduleMonth, type ScheduleResponse, type TeacherLessonVideo } from "./types";
 
 export const BISHKEK_TIME_ZONE = "Asia/Bishkek";
+export const DEFAULT_GRADUATION_AT = "2026-08-14T16:00:00+06:00";
 
 export const DEFAULT_LESSON_SCHEDULE: LessonScheduleInput[] = [
   { lessonNumber: 1, scheduledAt: "2026-07-06T16:00:00+06:00", courseMonth: 1 },
@@ -43,6 +44,7 @@ export function buildScheduleResponse(
   now = new Date(),
   transfers: LessonScheduleTransfer[] = [],
   lessonVideos: TeacherLessonVideo[] = [],
+  graduationAt = DEFAULT_GRADUATION_AT,
 ): ScheduleResponse {
   const lessons = normalizeLessonSchedule(source).map((lesson) => ({
     ...lesson,
@@ -65,9 +67,11 @@ export function buildScheduleResponse(
       && new Date(latestTransfer.rescheduledAt).getTime() > now.getTime()
       ? latestTransfer.id
       : null,
+    graduationAt,
     months: scheduleMonths([
       ...lessons,
       ...transfers.map((transfer) => ({ scheduledAt: transfer.originalScheduledAt })),
+      { scheduledAt: graduationAt },
     ]),
     currentLabel: `${currentCourseMonth} мес ${completed.length} урок`,
     completedLessonCount: completed.length,
@@ -75,6 +79,32 @@ export function buildScheduleResponse(
     lessonVideos: videos,
     latestVideo: videos[0] ?? null,
   };
+}
+
+export function transferGraduationSchedule(
+  currentGraduationAt: string,
+  expectedGraduationAt: string,
+  targetGraduationAt: string,
+  lessons: ScheduleSource[],
+  now = new Date(),
+): string {
+  if (currentGraduationAt !== expectedGraduationAt) {
+    throw new ScheduleConflictError("Дата выпуска уже изменилась. Обнови календарь и попробуй снова");
+  }
+  const targetTime = new Date(targetGraduationAt).getTime();
+  if (!targetGraduationAt || Number.isNaN(targetTime)) {
+    throw new Error("Укажи корректные дату и время выпуска");
+  }
+  if (targetTime <= now.getTime()) {
+    throw new Error("Выпуск можно назначить только на будущее время");
+  }
+  const latestLessonTime = Math.max(
+    ...normalizeLessonSchedule(lessons).map((lesson) => new Date(lesson.scheduledAt).getTime()),
+  );
+  if (targetTime <= latestLessonTime) {
+    throw new Error("Выпуск должен быть позже последнего занятия");
+  }
+  return targetGraduationAt;
 }
 
 export function transferLessonSchedule(
