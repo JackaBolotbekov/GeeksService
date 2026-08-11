@@ -1580,7 +1580,7 @@ function ProfileScreen({
   }, [selectedGraduationAt, selectedHomework, selectedLesson, selectedTransfer, transferSaving]);
 
   const copySelectedHomework = async () => {
-    if (!selectedHomework) return;
+    if (!selectedHomework || selectedHomework.lessonNumber === null) return;
     const text = `${selectedHomework.badge}\n${selectedHomework.title}\n\n${selectedHomework.body}`;
     try {
       await navigator.clipboard.writeText(text);
@@ -1803,21 +1803,25 @@ function ProfileScreen({
           >
             <div className="calendarHomeworkHead">
               <span className="calendarHomeworkBadge">{selectedHomework.badge}</span>
-              <button
-                type="button"
-                className="calendarHomeworkCopy"
-                aria-label="Скопировать домашнее задание"
-                onClick={() => void copySelectedHomework()}
-              >
-                ⧉
-              </button>
+              {selectedHomework.lessonNumber !== null && (
+                <button
+                  type="button"
+                  className="calendarHomeworkCopy"
+                  aria-label="Скопировать домашнее задание"
+                  onClick={() => void copySelectedHomework()}
+                >
+                  ⧉
+                </button>
+              )}
             </div>
             <h2 id="calendar-homework-title">{selectedHomework.title}</h2>
             <div className="calendarHomeworkBody">
               <strong>ДОМАШНЕЕ ЗАДАНИЕ</strong>
               <p>{selectedHomework.body}</p>
             </div>
-            {homeworkCopyMessage && <p className="calendarHomeworkCopyStatus">{homeworkCopyMessage}</p>}
+            {selectedHomework.lessonNumber !== null && homeworkCopyMessage && (
+              <p className="calendarHomeworkCopyStatus">{homeworkCopyMessage}</p>
+            )}
             <div className="calendarHomeworkActions">
               {selectedHomework.canSubmit && selectedHomework.lessonNumber !== null && !isAdmin && !submittedLessonNumbers.includes(selectedHomework.lessonNumber) && (
                 <button

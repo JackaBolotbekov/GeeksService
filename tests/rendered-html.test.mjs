@@ -905,7 +905,7 @@ test("admin score picker stays in one compact row", async () => {
   assert.doesNotMatch(css, /\.scorePicker\s*{[^}]*repeat\(4/s);
 });
 
-test("calendar lessons open source-matched homework and graduation copy dialog", async () => {
+test("calendar lessons open source-matched homework and graduation details dialog", async () => {
   const app = await readFile(new URL("../app/GeeksServiceApp.tsx", import.meta.url), "utf8");
   const homework = await readFile(new URL("../lib/lesson-homework.ts", import.meta.url), "utf8");
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
@@ -926,6 +926,8 @@ test("calendar lessons open source-matched homework and graduation copy dialog",
   assert.match(app, /onGraduationSelect\(\)/);
   assert.match(app, /navigator\.clipboard\.writeText/);
   assert.match(app, /aria-label="Скопировать домашнее задание"/);
+  assert.match(app, /selectedHomework\.lessonNumber !== null && \(\s*<button\s+type="button"\s+className="calendarHomeworkCopy"/s);
+  assert.match(app, /if \(!selectedHomework \|\| selectedHomework\.lessonNumber === null\) return/);
   assert.match(app, /canViewTransferReason/);
   assert.match(app, /Посмотреть причину переноса/);
   assert.match(app, /className="transferReasonReadOnly"/);
