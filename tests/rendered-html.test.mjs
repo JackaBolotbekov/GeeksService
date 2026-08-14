@@ -968,7 +968,8 @@ test("project leaderboard supports mobile team selection, management, and public
   assert.match(app, /window\.setTimeout\(\(\) => \{[\s\S]*?\}, 450\)/);
   assert.match(app, /validSelectedStudentIds\.length < 2/);
   assert.match(app, /eligible\.length >= 5/);
-  assert.match(app, /Зажмите для управления/);
+  assert.doesNotMatch(app, /Зажмите для управления/);
+  assert.doesNotMatch(css, /\.projectHoldHint/);
   assert.match(app, /Расформировать/);
   assert.match(app, /Перенести медаль/);
   assert.match(app, /api<ProjectLeaderboardResponse>\("\/api\/project-leaderboard"\)/);

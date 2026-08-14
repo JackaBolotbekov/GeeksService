@@ -3854,7 +3854,7 @@ function ProjectLeaderboard({
       {teams.length === 0 ? (
         <div className="projectEmpty">
           <strong>Проектных команд пока нет</strong>
-          <span>{isAdmin ? "Зажмите ученика ниже, затем выберите остальных." : "Преподаватель скоро соберёт команды."}</span>
+          {!isAdmin && <span>Преподаватель скоро соберёт команды.</span>}
         </div>
       ) : (
         <div className="projectTeams">
@@ -3895,7 +3895,6 @@ function ProjectLeaderboard({
                     </div>
                   ))}
                 </div>
-                {isAdmin && <span className="projectHoldHint">Зажмите для управления</span>}
               </article>
             );
           })}
