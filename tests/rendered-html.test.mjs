@@ -975,8 +975,10 @@ test("project leaderboard supports mobile team selection, management, and public
   assert.match(app, /api<ProjectLeaderboardResponse>\("\/api\/project-leaderboard"\)/);
   assert.match(app, /\/api\/admin\/project-teams/);
   assert.match(css, /\.leaderboardPager\s*{[^}]*touch-action:\s*pan-y/s);
+  assert.match(css, /\.leaderboardModeTabs\s*{[^}]*box-shadow:\s*none/s);
+  assert.match(css, /\.leaderboardModeTabs button\s*{[^}]*height:\s*24px/s);
   assert.match(css, /\.projectTeam\s*{[^}]*touch-action:\s*pan-y/s);
-  assert.match(css, /\.projectTeam\s*{[^}]*box-shadow:\s*none/s);
+  assert.match(css, /\.projectTeam\s*{[^}]*box-shadow:\s*6px 6px 0 var\(--yellow\)/s);
   assert.match(css, /\.projectMembers\s*{[^}]*repeat\(auto-fit, minmax\(48px, 1fr\)\)/s);
   assert.match(css, /\.projectMember\s*{[^}]*flex-direction:\s*column/s);
   assert.match(css, /\.projectDialogBackdrop\s*{[^}]*position:\s*fixed/s);
