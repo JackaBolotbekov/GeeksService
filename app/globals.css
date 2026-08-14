@@ -592,20 +592,18 @@ button:disabled {
 .projectTeam {
   position: relative;
   display: grid;
-  gap: 12px;
+  gap: 6px;
   min-width: 0;
-  padding: 15px;
+  padding: 9px 10px;
   border: 3px solid #11131b;
-  border-radius: 25px;
+  border-radius: 21px;
   outline: none;
-  background:
-    radial-gradient(circle at 100% 0%, rgba(255, 223, 38, 0.22), transparent 35%),
-    var(--card);
+  background: var(--card);
   color: #11131b;
-  box-shadow: 6px 6px 0 var(--yellow);
+  box-shadow: none;
   touch-action: pan-y;
   -webkit-touch-callout: none;
-  transition: transform 150ms ease, box-shadow 180ms ease, border-color 180ms ease;
+  transition: transform 150ms ease, border-color 180ms ease;
 }
 
 .projectTeam[role="button"] {
@@ -617,32 +615,33 @@ button:disabled {
 }
 
 .projectTeam:focus-visible {
-  box-shadow: 0 0 0 4px rgba(255, 223, 38, 0.28), 6px 6px 0 var(--yellow);
+  outline: 3px solid var(--green);
+  outline-offset: 2px;
 }
 
 .projectTeam.placed.place1 {
   border-color: #8c6a00;
-  box-shadow: 7px 7px 0 #ffdf26, 0 16px 30px rgba(255, 205, 0, 0.13);
+  box-shadow: none;
 }
 
 .projectTeam.placed.place2 {
   border-color: #69717e;
-  box-shadow: 7px 7px 0 #dfe4ec, 0 16px 30px rgba(214, 222, 234, 0.11);
+  box-shadow: none;
 }
 
 .projectTeam.placed.place3 {
   border-color: #884821;
-  box-shadow: 7px 7px 0 #d98542, 0 16px 30px rgba(217, 133, 66, 0.12);
+  box-shadow: none;
 }
 
 .projectTeamHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 7px;
   min-width: 0;
-  padding-bottom: 10px;
-  border-bottom: 2px solid rgba(17, 19, 27, 0.14);
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgba(17, 19, 27, 0.14);
 }
 
 .projectTeamHeader > div {
@@ -651,9 +650,9 @@ button:disabled {
 
 .projectTeamHeader > div > span {
   display: block;
-  margin-bottom: 3px;
+  margin-bottom: 1px;
   color: #7c6500;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 950;
   letter-spacing: 0.09em;
 }
@@ -662,45 +661,79 @@ button:disabled {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: clamp(22px, 6vw, 32px);
+  font-size: clamp(18px, 4.8vw, 24px);
   line-height: 1.05;
 }
 
 .projectMembers {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(48px, 1fr));
+  gap: 4px;
 }
 
 .projectMember {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 3px;
   min-width: 0;
-  padding: 7px;
-  border: 2px solid #11131b;
-  border-radius: 17px;
+  min-height: 54px;
+  padding: 4px 2px;
+  border: 1px solid #11131b;
+  border-radius: 13px;
   background: rgba(255, 255, 255, 0.72);
 }
 
 .projectMember .avatarWrap {
-  width: 40px;
-  height: 40px;
+  width: 30px;
+  height: 30px;
 }
 
 .projectMember strong {
+  display: -webkit-box;
+  width: 100%;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: clamp(13px, 3.4vw, 16px);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: clamp(9px, 2.5vw, 11px);
   line-height: 1.05;
+  text-align: center;
 }
 
 .projectHoldHint {
   color: #686d78;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 800;
+  line-height: 1;
   text-align: right;
+}
+
+.projectTeamHeader .projectMedal {
+  width: 42px;
+  height: 44px;
+}
+
+.projectTeamHeader .projectMedalRibbon {
+  width: 19px;
+  height: 27px;
+}
+
+.projectTeamHeader .projectMedalRibbon.left {
+  left: 5px;
+}
+
+.projectTeamHeader .projectMedalRibbon.right {
+  right: 5px;
+}
+
+.projectTeamHeader .projectMedal > strong {
+  width: 31px;
+  height: 31px;
+  border-width: 2px;
+  font-size: 16px;
+  box-shadow: 0 2px 0 rgba(17, 19, 27, 0.85), 0 4px 8px rgba(0, 0, 0, 0.16);
 }
 
 .projectMedal {
