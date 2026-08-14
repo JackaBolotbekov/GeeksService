@@ -146,6 +146,36 @@ async function initializeDatabase(): Promise<void> {
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
     `),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS project_teams (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        name_key TEXT NOT NULL UNIQUE,
+        place INTEGER CHECK (place IS NULL OR place BETWEEN 1 AND 3),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )
+    `),
+    db.prepare(`
+      CREATE TABLE IF NOT EXISTS project_team_members (
+        team_id TEXT NOT NULL,
+        student_id TEXT NOT NULL UNIQUE,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (team_id, student_id),
+        FOREIGN KEY(team_id) REFERENCES project_teams(id) ON DELETE CASCADE,
+        FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+      )
+    `),
+    db.prepare(`
+      CREATE UNIQUE INDEX IF NOT EXISTS project_teams_place_unique
+      ON project_teams(place)
+      WHERE place IS NOT NULL
+    `),
+    db.prepare(`
+      CREATE INDEX IF NOT EXISTS project_team_members_team_order_idx
+      ON project_team_members(team_id, sort_order)
+    `),
   ]);
   await ensureTransferHistoryColumns(db);
 
@@ -742,7 +772,7 @@ export async function importStudentsSnapshot(input: ImportedStudent[], currentTe
     let studentId = existing?.id;
 
     if (studentId) {
-      await db.prepare(`
+      const updateStatement = db.prepare(`
         UPDATE students
         SET telegram_user_id = COALESCE(?, telegram_user_id),
             telegram_username = COALESCE(?, telegram_username),
@@ -751,7 +781,9 @@ export async function importStudentsSnapshot(input: ImportedStudent[], currentTe
             status = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).bind(telegramUserId, telegramUsername, displayName, avatarUrl, status, studentId).run();
+      `).bind(telegramUserId, telegramUsername, displayName, avatarUrl, status, studentId);
+      const cleanupStatements = status === "active" ? [] : await projectMembershipCleanupStatements(db, studentId);
+      await db.batch([updateStatement, ...cleanupStatements]);
     } else {
       studentId = crypto.randomUUID();
       await db.prepare(`
@@ -805,21 +837,47 @@ export async function updateStudent(id: string, input: PatchStudentInput, curren
   const avatarUrl = input.avatarUrl === undefined ? existing.avatar_url : input.avatarUrl;
   const status = input.status ?? statusOf(existing.status);
 
-  await db.prepare(`
+  const updateStatement = db.prepare(`
     UPDATE students
     SET telegram_user_id = ?, telegram_username = ?, display_name = ?, avatar_url = ?, status = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).bind(telegramUserId, telegramUsername, displayName, avatarUrl, status, id).run();
+  `).bind(telegramUserId, telegramUsername, displayName, avatarUrl, status, id);
+  const cleanupStatements = status === "active" ? [] : await projectMembershipCleanupStatements(db, id);
+  await db.batch([updateStatement, ...cleanupStatements]);
   return (await listAllStudents(currentTelegramUserId)).find((student) => student.id === id) as StudentView;
 }
 
 export async function deleteStudent(id: string): Promise<void> {
   await ensureDatabase();
   const db = d1();
+  const cleanupStatements = await projectMembershipCleanupStatements(db, id);
   await db.batch([
+    ...cleanupStatements,
     db.prepare("DELETE FROM lesson_scores WHERE student_id = ?").bind(id),
     db.prepare("DELETE FROM students WHERE id = ?").bind(id),
   ]);
+}
+
+async function projectMembershipCleanupStatements(db: D1Database, studentId: string): Promise<D1PreparedStatement[]> {
+  const membership = await db.prepare(`
+    SELECT team_id
+    FROM project_team_members
+    WHERE student_id = ?
+  `).bind(studentId).first<{ team_id: string }>();
+  if (!membership) return [];
+
+  const count = await db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM project_team_members
+    WHERE team_id = ?
+  `).bind(membership.team_id).first<{ count: number }>();
+  if ((count?.count ?? 0) <= 2) {
+    return [
+      db.prepare("DELETE FROM project_team_members WHERE team_id = ?").bind(membership.team_id),
+      db.prepare("DELETE FROM project_teams WHERE id = ?").bind(membership.team_id),
+    ];
+  }
+  return [db.prepare("DELETE FROM project_team_members WHERE student_id = ?").bind(studentId)];
 }
 
 export async function setScore(studentId: string, lessonNumber: number, score: number | null): Promise<void> {

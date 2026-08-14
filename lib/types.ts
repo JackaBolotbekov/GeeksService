@@ -54,6 +54,19 @@ export interface LeaderboardResponse {
   students: StudentView[];
 }
 
+export interface ProjectTeamView {
+  id: string;
+  name: string;
+  place: 1 | 2 | 3 | null;
+  memberIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectLeaderboardResponse {
+  teams: ProjectTeamView[];
+}
+
 export interface AdminStudentsResponse {
   students: StudentView[];
   pendingStudents: StudentView[];

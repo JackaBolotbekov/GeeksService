@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const students = sqliteTable("students", {
   id: text("id").primaryKey(),
@@ -191,3 +191,28 @@ export const courseScheduleSettings = sqliteTable("course_schedule_settings", {
   graduationAt: text("graduation_at").notNull(),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const projectTeams = sqliteTable("project_teams", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  nameKey: text("name_key").notNull(),
+  place: integer("place"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  nameKeyIdx: uniqueIndex("project_teams_name_key_unique").on(table.nameKey),
+  placeIdx: uniqueIndex("project_teams_place_unique")
+    .on(table.place)
+    .where(sql`${table.place} IS NOT NULL`),
+}));
+
+export const projectTeamMembers = sqliteTable("project_team_members", {
+  teamId: text("team_id").notNull().references(() => projectTeams.id, { onDelete: "cascade" }),
+  studentId: text("student_id").notNull().references(() => students.id, { onDelete: "cascade" }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => ({
+  teamStudentPk: primaryKey({ columns: [table.teamId, table.studentId] }),
+  studentIdx: uniqueIndex("project_team_members_student_unique").on(table.studentId),
+  teamOrderIdx: index("project_team_members_team_order_idx").on(table.teamId, table.sortOrder),
+}));

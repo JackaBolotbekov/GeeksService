@@ -956,3 +956,62 @@ test("calendar lessons open source-matched homework and graduation details dialo
   assert.match(css, /\.calendarTransferDialog\.readOnly \.transferDialogActions\s*{[^}]*grid-template-columns:\s*1fr/s);
   assert.match(css, /\.calendarHomeworkSubmit\s*{[^}]*background:\s*var\(--yellow\)/s);
 });
+
+test("project leaderboard supports mobile team selection, management, and public viewing", async () => {
+  const app = await readFile(new URL("../app/GeeksServiceApp.tsx", import.meta.url), "utf8");
+  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(app, /type LeaderboardMode = "homework" \| "projects"/);
+  assert.match(app, /Домашки/);
+  assert.match(app, /Проекты/);
+  assert.match(app, /Math\.abs\(dx\) < 44/);
+  assert.match(app, /window\.setTimeout\(\(\) => \{[\s\S]*?\}, 450\)/);
+  assert.match(app, /validSelectedStudentIds\.length < 2/);
+  assert.match(app, /eligible\.length >= 5/);
+  assert.match(app, /Зажмите для управления/);
+  assert.match(app, /Расформировать/);
+  assert.match(app, /Перенести медаль/);
+  assert.match(app, /api<ProjectLeaderboardResponse>\("\/api\/project-leaderboard"\)/);
+  assert.match(app, /\/api\/admin\/project-teams/);
+  assert.match(css, /\.leaderboardPager\s*{[^}]*touch-action:\s*pan-y/s);
+  assert.match(css, /\.projectTeam\s*{[^}]*touch-action:\s*pan-y/s);
+  assert.match(css, /\.projectDialogBackdrop\s*{[^}]*position:\s*fixed/s);
+  assert.match(css, /safe-area-inset-bottom/);
+  assert.match(css, /\.projectMedal\.place2/);
+  assert.match(css, /\.projectMedal\.place3/);
+});
+
+test("project teams use durable D1 constraints and admin-only mutations", async () => {
+  const [types, schema, store, projectStore, publicRoute, adminRoute, teamRoute, migration] = await Promise.all([
+    readFile(new URL("../lib/types.ts", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/store.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/project-teams.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/project-leaderboard/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/project-teams/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/admin/project-teams/[teamId]/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0013_project_teams.sql", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(types, /interface ProjectTeamView/);
+  assert.match(types, /interface ProjectLeaderboardResponse/);
+  assert.match(schema, /projectTeams/);
+  assert.match(schema, /projectTeamMembers/);
+  assert.match(schema, /project_team_members_student_unique/);
+  assert.match(store, /CREATE TABLE IF NOT EXISTS project_teams/);
+  assert.match(store, /projectMembershipCleanupStatements/);
+  assert.match(projectStore, /ids\.length < 2 \|\| ids\.length > 5/);
+  assert.match(projectStore, /status = 'active'/);
+  assert.match(projectStore, /UPDATE project_teams SET place = NULL/);
+  assert.match(projectStore, /await db\.batch\(statements\)/);
+  assert.match(publicRoute, /listProjectTeams/);
+  assert.doesNotMatch(publicRoute, /requireAdmin/);
+  assert.match(adminRoute, /requireAdmin/);
+  assert.match(teamRoute, /requireAdmin/);
+  assert.match(teamRoute, /updateProjectTeam/);
+  assert.match(teamRoute, /deleteProjectTeam/);
+  assert.match(migration, /CHECK \(`place` IS NULL OR `place` BETWEEN 1 AND 3\)/);
+  assert.match(migration, /project_teams_place_unique/);
+  assert.match(migration, /project_team_members_student_unique/);
+  assert.match(migration, /ON DELETE cascade/);
+});

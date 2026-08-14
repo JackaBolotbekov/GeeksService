@@ -6,7 +6,7 @@ import { type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, useEffect
 import { lessonHomeworkByNumber } from "@/lib/lesson-homework";
 import { validateTeacherMaterialFile } from "@/lib/material-validation";
 import { bishkekDateKey, buildScheduleResponse, defaultTransferTarget, DEFAULT_LESSON_SCHEDULE, localDateParts, transferGraduationSchedule, transferLessonSchedule } from "@/lib/schedule";
-import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ScheduleResponse, StudentView, TeacherLessonVideo, TeacherMaterialUploadPartResponse, TeacherMaterialUploadResponse, TeacherMaterialUploadSessionResponse, TeacherUploadChunkDiagnostic, TeacherUploadJob, TeacherUploadJobResponse, YouTubeUploadReconcileResponse, YouTubeUploadResumeResponse } from "@/lib/types";
+import type { AdminStudentsResponse, AuthResponse, HomeworkSubmitResponse, LeaderboardResponse, LessonScheduleInput, LessonScheduleItem, LessonScheduleTransfer, MeResponse, ProjectLeaderboardResponse, ProjectTeamView, ScheduleResponse, StudentView, TeacherLessonVideo, TeacherMaterialUploadPartResponse, TeacherMaterialUploadResponse, TeacherMaterialUploadSessionResponse, TeacherUploadChunkDiagnostic, TeacherUploadJob, TeacherUploadJobResponse, YouTubeUploadReconcileResponse, YouTubeUploadResumeResponse } from "@/lib/types";
 import {
   initialYouTubeUploadChunkSize,
   isRetriableYouTubeUploadStatus,
@@ -23,6 +23,7 @@ declare global {
 
 type LoadState = "loading" | "ready" | "error";
 type ActiveScreen = "leaderboard" | "homeworkUpload" | "profile";
+type LeaderboardMode = "homework" | "projects";
 type UploadPhase = "idle" | "creating" | "uploading" | "finalizing" | "paused" | "saving" | "done" | "error";
 type HomeworkSubmitPhase = "idle" | "submitting" | "done" | "error";
 type TestRole = "service" | "students" | "teachers";
@@ -90,6 +91,12 @@ type CalendarHomeworkContent = {
 type StudentChange = {
   student: StudentView;
   patch: StudentPatch;
+};
+
+type ProjectTeamDraft = {
+  name: string;
+  studentIds: string[];
+  place: 1 | 2 | 3 | null;
 };
 
 type EditField = keyof StudentDraft;
@@ -223,6 +230,27 @@ function leaderboardSignature(students: StudentView[]): string {
 
 function isSameLeaderboard(left: StudentView[], right: StudentView[]): boolean {
   return leaderboardSignature(left) === leaderboardSignature(right);
+}
+
+function projectTeamsSignature(teams: ProjectTeamView[]): string {
+  return teams.map((team) => [
+    team.id,
+    team.name,
+    team.place ?? "-",
+    team.memberIds.join(","),
+    team.createdAt,
+    team.updatedAt,
+  ].join("~")).join("|");
+}
+
+function sortProjectTeams(teams: ProjectTeamView[]): ProjectTeamView[] {
+  return [...teams].sort((left, right) => {
+    const leftPlaced = left.place !== null;
+    const rightPlaced = right.place !== null;
+    if (leftPlaced !== rightPlaced) return leftPlaced ? -1 : 1;
+    if (left.place !== null && right.place !== null && left.place !== right.place) return left.place - right.place;
+    return left.createdAt.localeCompare(right.createdAt) || left.name.localeCompare(right.name, "ru");
+  });
 }
 
 function homeworkLinksAreValid(value: string): boolean {
@@ -836,13 +864,17 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
     if (rankedInitial.length > 0) return rankedInitial;
     return readCachedLeaderboard() ?? rankedInitial;
   });
+  const [projectTeams, setProjectTeams] = useState<ProjectTeamView[]>([]);
   const [schedule, setSchedule] = useState<ScheduleResponse>(() => buildScheduleResponse(DEFAULT_LESSON_SCHEDULE));
   const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [expandedStudentId, setExpandedStudentId] = useState<string | null>(null);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [bulkEditMode, setBulkEditMode] = useState(false);
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>("leaderboard");
+  const [leaderboardMode, setLeaderboardMode] = useState<LeaderboardMode>("homework");
   const leaderboardRef = useRef(leaderboard);
+  const projectTeamsRef = useRef(projectTeams);
+  const leaderboardSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const teacherPreview = rolePreviewAvailable && testRole === "teachers";
   const studentPreview = rolePreviewAvailable && testRole === "students";
   const actualAdmin = Boolean(isAdmin && sessionToken);
@@ -855,6 +887,10 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
   useEffect(() => {
     leaderboardRef.current = leaderboard;
   }, [leaderboard]);
+
+  useEffect(() => {
+    projectTeamsRef.current = projectTeams;
+  }, [projectTeams]);
 
   const setLeaderboardSmooth = (next: StudentView[] | ((current: StudentView[]) => StudentView[])) => {
     setLeaderboard((current) => {
@@ -876,14 +912,41 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
     setLeaderboardSmooth(rankVisibleStudents(next.students));
   };
 
+  const applyProjectResponse = (next: ProjectLeaderboardResponse) => {
+    const sorted = sortProjectTeams(next.teams);
+    projectTeamsRef.current = sorted;
+    setProjectTeams(sorted);
+  };
+
   const refresh = async (token = sessionToken, admin = isAdmin) => {
-    if (admin && token) {
-      const response = await api<AdminStudentsResponse>("/api/admin/students", {}, token);
-      setLeaderboardSmooth(rankVisibleStudents(response.students));
-      return;
-    }
-    const response = await api<LeaderboardResponse>("/api/leaderboard");
-    setLeaderboardSmooth(rankVisibleStudents(response.students));
+    const [studentsResponse, projectsResponse] = await Promise.all([
+      admin && token
+        ? api<AdminStudentsResponse>("/api/admin/students", {}, token)
+        : api<LeaderboardResponse>("/api/leaderboard"),
+      api<ProjectLeaderboardResponse>("/api/project-leaderboard"),
+    ]);
+    setLeaderboardSmooth(rankVisibleStudents(studentsResponse.students));
+    applyProjectResponse(projectsResponse);
+  };
+
+  const switchLeaderboardMode = (mode: LeaderboardMode) => {
+    if (mode === leaderboardMode) return;
+    hapticSelection();
+    setLeaderboardMode(mode);
+    setShowAdminPanel(false);
+    setBulkEditMode(false);
+    setExpandedStudentId(null);
+  };
+
+  const finishLeaderboardSwipe = (x: number, y: number) => {
+    const start = leaderboardSwipeStartRef.current;
+    leaderboardSwipeStartRef.current = null;
+    if (!start) return;
+    const dx = x - start.x;
+    const dy = y - start.y;
+    if (Math.abs(dx) < 44 || Math.abs(dx) < Math.abs(dy) * 1.12) return;
+    if (dx < 0 && leaderboardMode === "homework") switchLeaderboardMode("projects");
+    if (dx > 0 && leaderboardMode === "projects") switchLeaderboardMode("homework");
   };
 
   const refreshSchedule = async () => {
@@ -911,6 +974,91 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
       method: "PATCH",
       body: JSON.stringify(body),
     }, token);
+  };
+
+  const commitOptimisticProjectTeams = (next: ProjectTeamView[]) => {
+    const sorted = sortProjectTeams(next);
+    projectTeamsRef.current = sorted;
+    setProjectTeams(sorted);
+  };
+
+  const createProject = async (draft: ProjectTeamDraft) => {
+    const previous = projectTeamsRef.current;
+    const now = new Date().toISOString();
+    const optimistic: ProjectTeamView = {
+      id: `optimistic-project-${Date.now()}`,
+      name: draft.name.trim(),
+      place: draft.place,
+      memberIds: [...draft.studentIds],
+      createdAt: now,
+      updatedAt: now,
+    };
+    commitOptimisticProjectTeams([
+      ...previous.map((team) => draft.place !== null && team.place === draft.place ? { ...team, place: null } : team),
+      optimistic,
+    ]);
+    if (teacherPreview) return;
+    if (!sessionToken) {
+      commitOptimisticProjectTeams(previous);
+      throw new Error("Нет сессии преподавателя");
+    }
+    try {
+      applyProjectResponse(await api<ProjectLeaderboardResponse>("/api/admin/project-teams", {
+        method: "POST",
+        body: JSON.stringify(draft),
+      }, sessionToken));
+    } catch (caught) {
+      commitOptimisticProjectTeams(previous);
+      throw caught;
+    }
+  };
+
+  const updateProject = async (teamId: string, draft: ProjectTeamDraft) => {
+    const previous = projectTeamsRef.current;
+    const updatedAt = new Date().toISOString();
+    commitOptimisticProjectTeams(previous.map((team) => {
+      if (team.id === teamId) return {
+        ...team,
+        name: draft.name.trim(),
+        place: draft.place,
+        memberIds: [...draft.studentIds],
+        updatedAt,
+      };
+      if (draft.place !== null && team.place === draft.place) return { ...team, place: null, updatedAt };
+      return team;
+    }));
+    if (teacherPreview) return;
+    if (!sessionToken) {
+      commitOptimisticProjectTeams(previous);
+      throw new Error("Нет сессии преподавателя");
+    }
+    try {
+      applyProjectResponse(await api<ProjectLeaderboardResponse>(`/api/admin/project-teams/${teamId}`, {
+        method: "PATCH",
+        body: JSON.stringify(draft),
+      }, sessionToken));
+    } catch (caught) {
+      commitOptimisticProjectTeams(previous);
+      throw caught;
+    }
+  };
+
+  const removeProject = async (teamId: string) => {
+    const previous = projectTeamsRef.current;
+    commitOptimisticProjectTeams(previous.filter((team) => team.id !== teamId));
+    if (teacherPreview) return;
+    if (!sessionToken) {
+      commitOptimisticProjectTeams(previous);
+      throw new Error("Нет сессии преподавателя");
+    }
+    try {
+      applyProjectResponse(await api<ProjectLeaderboardResponse>(`/api/admin/project-teams/${teamId}`, {
+        method: "DELETE",
+      }, sessionToken));
+    } catch (caught) {
+      commitOptimisticProjectTeams(previous);
+      throw caught;
+    }
   };
 
   useEffect(() => {
@@ -979,14 +1127,22 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
         });
       }
     };
-    const refreshLiveLeaderboard = async () => {
-      if (isAdmin && sessionToken) {
-        const response = await api<AdminStudentsResponse>("/api/admin/students", {}, sessionToken);
-        applyLiveLeaderboard(response.students);
-        return;
+    const applyLiveProjectTeams = (teams: ProjectTeamView[]) => {
+      const sorted = sortProjectTeams(teams);
+      if (projectTeamsSignature(projectTeamsRef.current) !== projectTeamsSignature(sorted)) {
+        projectTeamsRef.current = sorted;
+        setProjectTeams(sorted);
       }
-      const response = await api<LeaderboardResponse>("/api/leaderboard");
-      applyLiveLeaderboard(response.students);
+    };
+    const refreshLiveLeaderboard = async () => {
+      const [studentsResponse, projectsResponse] = await Promise.all([
+        isAdmin && sessionToken
+          ? api<AdminStudentsResponse>("/api/admin/students", {}, sessionToken)
+          : api<LeaderboardResponse>("/api/leaderboard"),
+        api<ProjectLeaderboardResponse>("/api/project-leaderboard"),
+      ]);
+      applyLiveLeaderboard(studentsResponse.students);
+      applyLiveProjectTeams(projectsResponse.teams);
     };
     const tick = async () => {
       if (cancelled || inFlight || document.visibilityState === "hidden") return;
@@ -1060,6 +1216,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
     hapticSelection();
     setTestRole((current) => TEST_ROLE_ORDER[(TEST_ROLE_ORDER.indexOf(current) + 1) % TEST_ROLE_ORDER.length]);
     setActiveScreen("leaderboard");
+    setLeaderboardMode("homework");
     setShowAdminPanel(false);
     setBulkEditMode(false);
     setExpandedStudentId(null);
@@ -1085,7 +1242,7 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
         </div>
         <div className="topActions">
           <ScheduleBadge label={schedule.currentLabel} />
-          {effectiveAdmin && (
+          {effectiveAdmin && visibleScreen === "leaderboard" && leaderboardMode === "homework" && (
             <>
               <button
                 type="button"
@@ -1171,7 +1328,28 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
             />
           ) : visibleScreen === "leaderboard" ? (
             <>
-              {effectiveAdmin && showAdminPanel && (
+              <div className="leaderboardModeTabs" role="tablist" aria-label="Режим лидерборда">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={leaderboardMode === "homework"}
+                  className={leaderboardMode === "homework" ? "active" : ""}
+                  onClick={() => switchLeaderboardMode("homework")}
+                >
+                  Домашки
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={leaderboardMode === "projects"}
+                  className={leaderboardMode === "projects" ? "active" : ""}
+                  onClick={() => switchLeaderboardMode("projects")}
+                >
+                  Проекты
+                </button>
+                <span className={`leaderboardModeIndicator ${leaderboardMode}`} aria-hidden="true" />
+              </div>
+              {effectiveAdmin && leaderboardMode === "homework" && showAdminPanel && (
                 <AdminPanel
                   sessionToken={sessionToken}
                   previewMode={teacherPreview}
@@ -1179,58 +1357,83 @@ export function GeeksServiceApp({ initialStudents }: { initialStudents: StudentV
                   onChange={applyAdminResponse}
                 />
               )}
-              <Leaderboard
-                students={leaderboard}
-                isAdmin={effectiveAdmin}
-                expandedStudentId={expandedStudentId}
-                bulkEditMode={bulkEditMode}
-                onBulkEditClose={() => {
-                  setBulkEditMode(false);
+              <div
+                className={`leaderboardPager ${leaderboardMode}`}
+                onPointerDown={(event) => {
+                  if ((event.target as HTMLElement).closest("button,input,select,[data-project-dialog]")) return;
+                  leaderboardSwipeStartRef.current = { x: event.clientX, y: event.clientY };
                 }}
-                onToggleStudent={toggleStudent}
-                onScoreChange={async (student, lessonNumber, score) => {
-                  if (teacherPreview) {
-                    setLeaderboardFast((current) => withScore(current, student.id, lessonNumber, score));
-                    return;
-                  }
-                  if (!sessionToken) return;
-                  const previous = leaderboardRef.current;
-                  setLeaderboardFast((current) => withScore(current, student.id, lessonNumber, score));
-                  try {
-                    const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}/scores/${lessonNumber}`, {
-                      method: "PUT",
-                      body: JSON.stringify({ score }),
-                    }, sessionToken);
-                    setLeaderboardFast(rankVisibleStudents(response.students));
-                  } catch (caught) {
-                    setLeaderboardFast(previous);
-                    throw caught;
-                  }
+                onPointerUp={(event) => finishLeaderboardSwipe(event.clientX, event.clientY)}
+                onPointerCancel={() => {
+                  leaderboardSwipeStartRef.current = null;
                 }}
-                onBulkStudentChange={async (changes) => {
-                  if (changes.length === 0) return;
-                  const previous = leaderboardRef.current;
-                  setLeaderboardSmooth((current) => {
-                    const patchesById = new Map(changes.map((change) => [change.student.id, change.patch]));
-                    return rankVisibleStudents(current.map((item) => {
-                      const patch = patchesById.get(item.id);
-                      return patch ? mergeStudentPatch(item, patch) : item;
-                    }));
-                  });
-                  if (teacherPreview) return;
-                  if (!sessionToken) return;
-                  try {
-                    let latest: AdminStudentsResponse | null = null;
-                    for (const change of changes) {
-                      latest = await updateStudentOnServer(change.student, change.patch, sessionToken);
-                    }
-                    if (latest) applyAdminResponse(latest);
-                  } catch (caught) {
-                    setLeaderboardSmooth(previous);
-                    throw caught;
-                  }
-                }}
-              />
+              >
+                <div className={`leaderboardPage ${leaderboardMode}`} key={leaderboardMode}>
+                  {leaderboardMode === "homework" ? (
+                    <Leaderboard
+                      students={leaderboard}
+                      isAdmin={effectiveAdmin}
+                      expandedStudentId={expandedStudentId}
+                      bulkEditMode={bulkEditMode}
+                      onBulkEditClose={() => {
+                        setBulkEditMode(false);
+                      }}
+                      onToggleStudent={toggleStudent}
+                      onScoreChange={async (student, lessonNumber, score) => {
+                        if (teacherPreview) {
+                          setLeaderboardFast((current) => withScore(current, student.id, lessonNumber, score));
+                          return;
+                        }
+                        if (!sessionToken) return;
+                        const previous = leaderboardRef.current;
+                        setLeaderboardFast((current) => withScore(current, student.id, lessonNumber, score));
+                        try {
+                          const response = await api<AdminStudentsResponse>(`/api/admin/students/${student.id}/scores/${lessonNumber}`, {
+                            method: "PUT",
+                            body: JSON.stringify({ score }),
+                          }, sessionToken);
+                          setLeaderboardFast(rankVisibleStudents(response.students));
+                        } catch (caught) {
+                          setLeaderboardFast(previous);
+                          throw caught;
+                        }
+                      }}
+                      onBulkStudentChange={async (changes) => {
+                        if (changes.length === 0) return;
+                        const previous = leaderboardRef.current;
+                        setLeaderboardSmooth((current) => {
+                          const patchesById = new Map(changes.map((change) => [change.student.id, change.patch]));
+                          return rankVisibleStudents(current.map((item) => {
+                            const patch = patchesById.get(item.id);
+                            return patch ? mergeStudentPatch(item, patch) : item;
+                          }));
+                        });
+                        if (teacherPreview) return;
+                        if (!sessionToken) return;
+                        try {
+                          let latest: AdminStudentsResponse | null = null;
+                          for (const change of changes) {
+                            latest = await updateStudentOnServer(change.student, change.patch, sessionToken);
+                          }
+                          if (latest) applyAdminResponse(latest);
+                        } catch (caught) {
+                          setLeaderboardSmooth(previous);
+                          throw caught;
+                        }
+                      }}
+                    />
+                  ) : (
+                    <ProjectLeaderboard
+                      students={leaderboard}
+                      teams={projectTeams}
+                      isAdmin={effectiveAdmin}
+                      onCreate={createProject}
+                      onUpdate={updateProject}
+                      onDelete={removeProject}
+                    />
+                  )}
+                </div>
+              </div>
             </>
           ) : null}
           <BottomNav
@@ -3443,6 +3646,427 @@ function Leaderboard({
         );
       })}
     </section>
+  );
+}
+
+function ProjectLeaderboard({
+  students,
+  teams,
+  isAdmin,
+  onCreate,
+  onUpdate,
+  onDelete,
+}: {
+  students: StudentView[];
+  teams: ProjectTeamView[];
+  isAdmin: boolean;
+  onCreate: (draft: ProjectTeamDraft) => Promise<void>;
+  onUpdate: (teamId: string, draft: ProjectTeamDraft) => Promise<void>;
+  onDelete: (teamId: string) => Promise<void>;
+}) {
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [dialogMode, setDialogMode] = useState<"create" | "edit" | null>(null);
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [draftMemberIds, setDraftMemberIds] = useState<string[]>([]);
+  const [draftPlace, setDraftPlace] = useState<1 | 2 | 3 | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [dialogError, setDialogError] = useState<string | null>(null);
+  const projectHoldTimerRef = useRef<number | null>(null);
+  const pressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const longPressTriggeredRef = useRef(false);
+
+  const studentsById = new Map(students.map((student) => [student.id, student]));
+  const assignedStudentIds = new Set(teams.flatMap((team) => team.memberIds));
+  const unassignedStudents = students.filter((student) => !assignedStudentIds.has(student.id));
+  const unassignedStudentIds = new Set(unassignedStudents.map((student) => student.id));
+  const validSelectedStudentIds = selectedStudentIds.filter((id) => unassignedStudentIds.has(id));
+  const editingTeam = editingTeamId ? teams.find((team) => team.id === editingTeamId) ?? null : null;
+  const editingMemberIds = new Set(editingTeam?.memberIds ?? []);
+  const memberOptions = students.filter((student) =>
+    !assignedStudentIds.has(student.id) || editingMemberIds.has(student.id),
+  );
+
+  useEffect(() => () => {
+    if (projectHoldTimerRef.current !== null) window.clearTimeout(projectHoldTimerRef.current);
+  }, []);
+
+  const cancelLongPress = () => {
+    if (projectHoldTimerRef.current !== null) window.clearTimeout(projectHoldTimerRef.current);
+    projectHoldTimerRef.current = null;
+    pressStartRef.current = null;
+  };
+
+  const startProjectHold = (event: React.PointerEvent<HTMLElement>, action: () => void) => {
+    if (!isAdmin || event.button !== 0) return;
+    cancelLongPress();
+    longPressTriggeredRef.current = false;
+    pressStartRef.current = { x: event.clientX, y: event.clientY };
+    projectHoldTimerRef.current = window.setTimeout(() => {
+      projectHoldTimerRef.current = null;
+      pressStartRef.current = null;
+      longPressTriggeredRef.current = true;
+      hapticImpact("medium");
+      action();
+    }, 450);
+  };
+
+  const moveLongPress = (event: React.PointerEvent<HTMLElement>) => {
+    const start = pressStartRef.current;
+    if (!start) return;
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) cancelLongPress();
+  };
+
+  const consumeLongPressClick = (event: React.MouseEvent<HTMLElement>): boolean => {
+    if (!longPressTriggeredRef.current) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    longPressTriggeredRef.current = false;
+    return true;
+  };
+
+  const toggleSelectedStudent = (studentId: string) => {
+    setSelectedStudentIds((current) => {
+      const eligible = current.filter((id) => unassignedStudentIds.has(id));
+      if (eligible.includes(studentId)) {
+        hapticSelection();
+        return eligible.filter((id) => id !== studentId);
+      }
+      if (eligible.length >= 5) {
+        hapticNotice("warning");
+        return eligible;
+      }
+      hapticSelection();
+      return [...eligible, studentId];
+    });
+  };
+
+  const beginSelection = (studentId: string) => {
+    setSelectedStudentIds((current) => current.includes(studentId) ? current : [...current, studentId].slice(0, 5));
+  };
+
+  const openCreateDialog = () => {
+    if (validSelectedStudentIds.length < 2 || validSelectedStudentIds.length > 5) return;
+    setDialogMode("create");
+    setEditingTeamId(null);
+    setDraftName("");
+    setDraftMemberIds([...validSelectedStudentIds]);
+    setDraftPlace(null);
+    setDialogError(null);
+  };
+
+  const openEditDialog = (team: ProjectTeamView) => {
+    setDialogMode("edit");
+    setEditingTeamId(team.id);
+    setDraftName(team.name);
+    setDraftMemberIds([...team.memberIds]);
+    setDraftPlace(team.place);
+    setDialogError(null);
+  };
+
+  const closeDialog = () => {
+    if (saving) return;
+    setDialogMode(null);
+    setEditingTeamId(null);
+    setDialogError(null);
+  };
+
+  const toggleDraftMember = (studentId: string) => {
+    setDialogError(null);
+    setDraftMemberIds((current) => {
+      if (current.includes(studentId)) return current.filter((id) => id !== studentId);
+      if (current.length >= 5) {
+        hapticNotice("warning");
+        return current;
+      }
+      hapticSelection();
+      return [...current, studentId];
+    });
+  };
+
+  const saveProjectDialog = async () => {
+    const name = draftName.trim().replace(/\s+/g, " ");
+    if (Array.from(name).length < 2 || Array.from(name).length > 60) {
+      setDialogError("Название должно быть от 2 до 60 символов");
+      return;
+    }
+    if (draftMemberIds.length < 2 || draftMemberIds.length > 5) {
+      setDialogError("Выберите от 2 до 5 учеников");
+      return;
+    }
+    const placeOwner = draftPlace === null
+      ? null
+      : teams.find((team) => team.id !== editingTeamId && team.place === draftPlace) ?? null;
+    if (placeOwner && !window.confirm(`${draftPlace} место сейчас у «${placeOwner.name}». Перенести медаль?`)) return;
+
+    setSaving(true);
+    setDialogError(null);
+    try {
+      const draft: ProjectTeamDraft = { name, studentIds: draftMemberIds, place: draftPlace };
+      if (dialogMode === "edit" && editingTeamId) await onUpdate(editingTeamId, draft);
+      else await onCreate(draft);
+      setSelectedStudentIds([]);
+      setDialogMode(null);
+      setEditingTeamId(null);
+      hapticNotice("success");
+    } catch (caught) {
+      setDialogError(caught instanceof Error ? caught.message : "Не удалось сохранить проект");
+      hapticNotice("error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const disbandProject = async () => {
+    if (!editingTeam || !window.confirm(`Расформировать проект «${editingTeam.name}»?`)) return;
+    setSaving(true);
+    setDialogError(null);
+    try {
+      await onDelete(editingTeam.id);
+      setDialogMode(null);
+      setEditingTeamId(null);
+      hapticNotice("success");
+    } catch (caught) {
+      setDialogError(caught instanceof Error ? caught.message : "Не удалось расформировать проект");
+      hapticNotice("error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <section className="projectLeaderboard" aria-label="Лидерборд проектов">
+      {isAdmin && validSelectedStudentIds.length > 0 && (
+        <div className="projectSelectionBar">
+          <button type="button" className="projectSelectionCancel" onClick={() => setSelectedStudentIds([])}>Отмена</button>
+          <span>{validSelectedStudentIds.length}/5</span>
+          <button
+            type="button"
+            className="projectSelectionCreate"
+            disabled={validSelectedStudentIds.length < 2}
+            onClick={openCreateDialog}
+          >
+            Создать проект
+          </button>
+        </div>
+      )}
+
+      {teams.length === 0 ? (
+        <div className="projectEmpty">
+          <strong>Проектных команд пока нет</strong>
+          <span>{isAdmin ? "Зажмите ученика ниже, затем выберите остальных." : "Преподаватель скоро соберёт команды."}</span>
+        </div>
+      ) : (
+        <div className="projectTeams">
+          {teams.map((team) => {
+            const members = team.memberIds.map((id) => studentsById.get(id)).filter((student): student is StudentView => Boolean(student));
+            return (
+              <article
+                className={`projectTeam ${team.place ? `placed place${team.place}` : ""}`}
+                key={team.id}
+                role={isAdmin ? "button" : undefined}
+                tabIndex={isAdmin ? 0 : undefined}
+                aria-label={`${team.name}${team.place ? `, ${team.place} место` : ""}`}
+                onPointerDown={isAdmin ? (event) => startProjectHold(event, () => openEditDialog(team)) : undefined}
+                onPointerMove={isAdmin ? moveLongPress : undefined}
+                onPointerUp={isAdmin ? cancelLongPress : undefined}
+                onPointerCancel={isAdmin ? cancelLongPress : undefined}
+                onClick={isAdmin ? (event) => {
+                  consumeLongPressClick(event);
+                } : undefined}
+                onKeyDown={isAdmin ? (event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  openEditDialog(team);
+                } : undefined}
+              >
+                <header className="projectTeamHeader">
+                  <div>
+                    <span>ПРОЕКТ</span>
+                    <strong>{team.name}</strong>
+                  </div>
+                  {team.place && <ProjectMedal place={team.place} />}
+                </header>
+                <div className="projectMembers">
+                  {members.map((student) => (
+                    <div className="projectMember" key={student.id}>
+                      <Avatar student={student} />
+                      <strong>{student.displayName}</strong>
+                    </div>
+                  ))}
+                </div>
+                {isAdmin && <span className="projectHoldHint">Зажмите для управления</span>}
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      {isAdmin && unassignedStudents.length > 0 && (
+        <div className="projectUnassigned">
+          <div className="projectSectionTitle">
+            <strong>Без проекта</strong>
+            <span>{unassignedStudents.length}</span>
+          </div>
+          <div className="projectStudentList">
+            {unassignedStudents.map((student) => {
+              const selected = selectedStudentIds.includes(student.id);
+              return (
+                <article
+                  className={`projectStudent ${selected ? "selected" : ""}`}
+                  key={student.id}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selected}
+                  onPointerDown={(event) => startProjectHold(event, () => beginSelection(student.id))}
+                  onPointerMove={moveLongPress}
+                  onPointerUp={cancelLongPress}
+                  onPointerCancel={cancelLongPress}
+                  onClick={(event) => {
+                    if (consumeLongPressClick(event)) return;
+                    if (validSelectedStudentIds.length > 0) toggleSelectedStudent(student.id);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    toggleSelectedStudent(student.id);
+                  }}
+                >
+                  <Avatar student={student} />
+                  <strong>{student.displayName}</strong>
+                  <span className="projectStudentCheck" aria-hidden="true">{selected ? "✓" : "+"}</span>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {dialogMode && (
+        <div
+          className="projectDialogBackdrop"
+          data-project-dialog
+          role="presentation"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closeDialog();
+          }}
+        >
+          <section className="projectDialog" role="dialog" aria-modal="true" aria-labelledby="project-dialog-title">
+            <div className="projectDialogHeader">
+              <div>
+                <span>{dialogMode === "create" ? "НОВАЯ КОМАНДА" : "УПРАВЛЕНИЕ"}</span>
+                <h2 id="project-dialog-title">{dialogMode === "create" ? "Создать проект" : "Изменить проект"}</h2>
+              </div>
+              <button type="button" onClick={closeDialog} disabled={saving} aria-label="Закрыть">×</button>
+            </div>
+
+            <label className="projectNameField">
+              <span>Название проекта</span>
+              <input
+                value={draftName}
+                onChange={(event) => {
+                  setDraftName(event.target.value);
+                  setDialogError(null);
+                }}
+                maxLength={60}
+                placeholder="Например, Geeks Rocket"
+                autoFocus
+                disabled={saving}
+              />
+            </label>
+
+            <div className="projectDialogBlock">
+              <div className="projectDialogBlockTitle">
+                <strong>Участники</strong>
+                <span>{draftMemberIds.length}/5</span>
+              </div>
+              <div className="projectMemberPicker">
+                {memberOptions.map((student) => {
+                  const selected = draftMemberIds.includes(student.id);
+                  return (
+                    <button
+                      type="button"
+                      className={selected ? "selected" : ""}
+                      key={student.id}
+                      onClick={() => toggleDraftMember(student.id)}
+                      disabled={saving}
+                      aria-pressed={selected}
+                    >
+                      <Avatar student={student} />
+                      <span>{student.displayName}</span>
+                      <strong>{selected ? "✓" : "+"}</strong>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="projectDialogBlock">
+              <div className="projectDialogBlockTitle">
+                <strong>Место</strong>
+                <span>{draftPlace ? `${draftPlace} место` : "без медали"}</span>
+              </div>
+              <div className="projectPlacePicker">
+                {[1, 2, 3].map((place) => (
+                  <button
+                    type="button"
+                    className={draftPlace === place ? `selected place${place}` : `place${place}`}
+                    key={place}
+                    onClick={() => {
+                      setDraftPlace(place as 1 | 2 | 3);
+                      setDialogError(null);
+                      hapticSelection();
+                    }}
+                    disabled={saving}
+                    aria-pressed={draftPlace === place}
+                  >
+                    <ProjectMedal place={place as 1 | 2 | 3} compact />
+                    <span>{place} место</span>
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className={`projectNoPlace ${draftPlace === null ? "selected" : ""}`}
+                  onClick={() => setDraftPlace(null)}
+                  disabled={saving}
+                  aria-pressed={draftPlace === null}
+                >
+                  Без места
+                </button>
+              </div>
+            </div>
+
+            {dialogError && <p className="projectDialogError" role="alert">{dialogError}</p>}
+            <div className="projectDialogActions">
+              {dialogMode === "edit" && (
+                <button type="button" className="projectDelete" onClick={() => void disbandProject()} disabled={saving}>
+                  Расформировать
+                </button>
+              )}
+              <button
+                type="button"
+                className="projectSave"
+                onClick={() => void saveProjectDialog()}
+                disabled={saving || draftMemberIds.length < 2 || !draftName.trim()}
+              >
+                {saving ? "Сохраняю…" : dialogMode === "create" ? "Создать" : "Сохранить"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ProjectMedal({ place, compact = false }: { place: 1 | 2 | 3; compact?: boolean }) {
+  const label = place === 1 ? "Золото" : place === 2 ? "Серебро" : "Бронза";
+  return (
+    <span className={`projectMedal place${place} ${compact ? "compact" : ""}`} title={`${place} место — ${label}`}>
+      <span className="projectMedalRibbon left" aria-hidden="true" />
+      <span className="projectMedalRibbon right" aria-hidden="true" />
+      <strong>{place}</strong>
+    </span>
   );
 }
 
